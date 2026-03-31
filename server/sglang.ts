@@ -1,5 +1,7 @@
 /** Fetch Prometheus metrics from the SGLang HTTP server (host-published port). */
 
+import { assistantFromCompletionBody } from "../lib/openai-completion-text.js";
+
 const DEFAULT_BASE = process.env.SGLANG_BASE_URL ?? "http://127.0.0.1:8000";
 const METRICS_PATH = process.env.SGLANG_METRICS_PATH ?? "/metrics";
 const FETCH_TIMEOUT_MS = Number(process.env.SGLANG_FETCH_TIMEOUT_MS ?? "8000");
@@ -250,57 +252,6 @@ const BENCHMARK_MAX_REQUESTS = Number(process.env.SGLANG_BENCHMARK_MAX_REQUESTS 
 const BENCHMARK_MAX_CONCURRENCY = Number(process.env.SGLANG_BENCHMARK_MAX_CONCURRENCY ?? "32");
 /** Max chars of assistant text returned as `sampleContent` (request index 0). */
 const BENCHMARK_SAMPLE_MAX_CHARS = Number(process.env.SGLANG_BENCHMARK_SAMPLE_MAX_CHARS ?? "32000");
-
-/** Normalize OpenAI-style `message.content` (string, or array of text/ref parts). */
-function normalizeChatContent(content: unknown): string | null {
-  if (typeof content === "string") return content;
-  if (content === null || content === undefined) return null;
-  if (Array.isArray(content)) {
-    const parts: string[] = [];
-    for (const part of content) {
-      if (typeof part === "string") parts.push(part);
-      else if (typeof part === "object" && part !== null) {
-        const p = part as Record<string, unknown>;
-        if (typeof p.text === "string") parts.push(p.text);
-        else if (p.type === "text" && typeof p.text === "string") parts.push(p.text);
-      }
-    }
-    return parts.length > 0 ? parts.join("") : null;
-  }
-  if (typeof content === "object") {
-    const o = content as Record<string, unknown>;
-    if (typeof o.text === "string") return o.text;
-    if (o.type === "text" && typeof o.text === "string") return o.text;
-  }
-  return null;
-}
-
-/**
- * Extract assistant-visible text from `POST /v1/chat/completions` JSON.
- * Qwen / SGLang may use string or array `content`, or `reasoning_content` when present.
- */
-function assistantFromCompletionBody(data: unknown): string | null {
-  if (typeof data !== "object" || data === null) return null;
-  const choices = (data as { choices?: unknown }).choices;
-  if (!Array.isArray(choices) || choices.length === 0) return null;
-  const first = choices[0];
-  if (typeof first !== "object" || first === null) return null;
-  const c = first as Record<string, unknown>;
-
-  if (typeof c.text === "string") return c.text;
-
-  const msg = c.message;
-  if (typeof msg === "object" && msg !== null) {
-    const m = msg as Record<string, unknown>;
-    const fromContent = normalizeChatContent(m.content);
-    if (fromContent !== null) return fromContent;
-    if (typeof m.reasoning_content === "string" && m.reasoning_content.length > 0) {
-      return m.reasoning_content;
-    }
-    if (typeof m.reasoning === "string" && m.reasoning.length > 0) return m.reasoning;
-  }
-  return null;
-}
 
 function truncateSample(s: string): string {
   const max = Number.isFinite(BENCHMARK_SAMPLE_MAX_CHARS) && BENCHMARK_SAMPLE_MAX_CHARS > 0

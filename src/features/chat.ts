@@ -2,6 +2,7 @@
  * Side panel: OpenAI-compatible chat via `POST /api/chat/completions` (core API).
  */
 
+import { assistantFromCompletionBody } from "../../lib/openai-completion-text.js";
 import { fetchSglangConfig } from "../sglang/config";
 import { withProviderHeaders, withProviderQuery } from "../app/provider";
 
@@ -47,17 +48,6 @@ function renderMessages(): void {
   messagesEl.scrollTop = messagesEl.scrollHeight;
 }
 
-function getAssistantContent(data: unknown): string | null {
-  if (typeof data !== "object" || data === null) return null;
-  const choices = (data as { choices?: unknown }).choices;
-  if (!Array.isArray(choices) || choices.length === 0) return null;
-  const first = choices[0];
-  if (typeof first !== "object" || first === null) return null;
-  const msg = (first as { message?: { content?: unknown } }).message;
-  if (typeof msg?.content === "string") return msg.content;
-  return null;
-}
-
 async function send(): Promise<void> {
   const model = modelInput?.value?.trim();
   const text = inputEl?.value?.trim();
@@ -98,7 +88,7 @@ async function send(): Promise<void> {
       return;
     }
 
-    const content = getAssistantContent(data);
+    const content = assistantFromCompletionBody(data);
     if (content === null) {
       history = history.slice(0, -1);
       renderMessages();
