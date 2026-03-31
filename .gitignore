@@ -1,0 +1,12 @@
+node_modules/
+**/node_modules/
+dist/
+**/dist/
+.nimis/
+.monitor/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.Python

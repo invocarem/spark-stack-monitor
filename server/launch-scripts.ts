@@ -1,0 +1,421 @@
+/**
+ * Repo `scripts/*.sh` launchers (mounted at `/workspace/scripts` in the stack container).
+ */
+
+import fs from "node:fs";
+import path from "node:path";
+import {
+  assertSafeContainerName,
+  dockerExec,
+  dockerExecDetached,
+} from "./docker.js";
+import { fetchInferenceModelIds } from "./sglang.js";
+import { findRepoRoot } from "./repo-root.js";
+
+/** Path inside the container (see repo README: bind mount at `/workspace`). */
+export const CONTAINER_SCRIPTS_DIR = "/workspace/scripts";
+
+/**
+ * Launch stdout/stderr are appended here. `docker logs` only shows the container's
+ * main process; `docker exec -d` does not feed that log, so we tee to a file for the UI/API.
+ */
+export const LAUNCH_LOG_PATH = "/workspace/.monitor/sglang-launch.log";
+
+const DEFAULT_LAUNCH_LOG_TAIL_LINES = Math.min(
+  Math.max(1, Number(process.env.MONITOR_LAUNCH_LOG_TAIL ?? "800")),
+  10_000,
+);
+
+const BASENAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9._-]*\.sh$/;
+
+/** Render terminal CR behavior so progress bars update in-place. */
+export function normalizeLaunchLogText(text: string): string {
+  if (!text) return text;
+  const lines: string[] = [];
+  let current = "";
+  let cursor = 0;
+
+  const writeChar = (ch: string): void => {
+    if (cursor >= current.length) {
+      current += ch;
+    } else {
+      current = `${current.slice(0, cursor)}${ch}${current.slice(cursor + 1)}`;
+    }
+    cursor += 1;
+  };
+
+  for (let i = 0; i < text.length; i += 1) {
+    const ch = text[i];
+    if (ch === "\r") {
+      if (text[i + 1] === "\n") {
+        lines.push(current);
+        current = "";
+        cursor = 0;
+        i += 1;
+      } else {
+        cursor = 0;
+      }
+      continue;
+    }
+    if (ch === "\n") {
+      lines.push(current);
+      current = "";
+      cursor = 0;
+      continue;
+    }
+    writeChar(ch);
+  }
+
+  lines.push(current);
+  return lines.join("\n");
+}
+
+export type LaunchArgPair = {
+  key: string;
+  value: string;
+  enabled: boolean;
+};
+
+type ScriptMeta = {
+  launchArgs: LaunchArgPair[];
+};
+
+function parseSimpleAssignments(scriptText: string): Map<string, string> {
+  const vars = new Map<string, string>();
+  for (const rawLine of scriptText.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("#")) continue;
+    const m = line.match(/^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/);
+    if (!m) continue;
+    const key = m[1] ?? "";
+    let value = (m[2] ?? "").trim();
+    if (
+      (value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"))
+    ) {
+      value = value.slice(1, -1);
+    }
+    vars.set(key, value);
+  }
+  return vars;
+}
+
+function parseLaunchArgsFromScriptText(scriptText: string): LaunchArgPair[] {
+  const vars = parseSimpleAssignments(scriptText);
+  const lines = scriptText.split(/\r?\n/);
+  const out: LaunchArgPair[] = [];
+  let inLaunch = false;
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!inLaunch) {
+      if (/python3\s+-m\s+sglang\.launch_server\b/.test(line)) {
+        inLaunch = true;
+      }
+      continue;
+    }
+    if (!line || line.startsWith("#")) {
+      continue;
+    }
+    const noSlash = line.replace(/\\\s*$/, "").trim();
+    const m = noSlash.match(/^(--[A-Za-z0-9][A-Za-z0-9-]*)(?:\s+(.+))?$/);
+    if (!m) {
+      if (!line.endsWith("\\")) break;
+      continue;
+    }
+    const key = m[1] ?? "";
+    const rawValue = (m[2] ?? "").trim();
+    const varRef = rawValue.match(/^\$\{([A-Za-z_][A-Za-z0-9_]*)\}$/);
+    const value = varRef ? (vars.get(varRef[1] ?? "") ?? rawValue) : rawValue;
+    out.push({ key, value, enabled: true });
+    if (!line.endsWith("\\")) break;
+  }
+  return out;
+}
+
+function readScriptMeta(scriptBasename: string): ScriptMeta {
+  const scriptsDir = path.join(findRepoRoot(), "scripts");
+  const fullPath = path.join(scriptsDir, scriptBasename);
+  let text = "";
+  try {
+    text = fs.readFileSync(fullPath, "utf8");
+  } catch {
+    return { launchArgs: [] };
+  }
+  return {
+    launchArgs: parseLaunchArgsFromScriptText(text),
+  };
+}
+
+export function listLaunchScripts(): {
+  id: string;
+  label: string;
+  pathInContainer: string;
+  launchArgs: LaunchArgPair[];
+}[] {
+  const scriptsDir = path.join(findRepoRoot(), "scripts");
+  let names: string[] = [];
+  try {
+    names = fs.readdirSync(scriptsDir).filter((n) => n.endsWith(".sh") && BASENAME_RE.test(n));
+  } catch {
+    return [];
+  }
+  names.sort((a, b) => a.localeCompare(b));
+  return names.map((id) => ({
+    id,
+    label: id,
+    pathInContainer: `${CONTAINER_SCRIPTS_DIR}/${id}`,
+    launchArgs: readScriptMeta(id).launchArgs,
+  }));
+}
+
+export function isAllowedLaunchScript(basename: string): boolean {
+  if (!BASENAME_RE.test(basename)) return false;
+  return listLaunchScripts().some((s) => s.id === basename);
+}
+
+export type LaunchServerStatus =
+  | { ok: true; running: boolean; detail?: string; servedModel: string | null }
+  | { ok: false; error: string };
+
+/** Parse `--served-model-name` from a full `ps`/`cmdline` string. */
+function parseServedModelFromArgs(text: string): string | null {
+  const flat = text.replace(/\s+/g, " ").trim();
+  const m = flat.match(/--served-model-name(?:=|\s+)(\S+)/);
+  return m?.[1] ?? null;
+}
+
+/**
+ * Detect `python -m sglang.launch_server` via `pgrep -f sglang.launch_server` inside the container.
+ * When running, tries (1) `ps` args for `--served-model-name`, then (2) `GET /v1/models` on the host inference URL.
+ */
+export async function getLaunchServerStatus(container: string): Promise<LaunchServerStatus> {
+  try {
+    assertSafeContainerName(container);
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Invalid container name" };
+  }
+  const r = await dockerExec(container, ["pgrep", "-f", "sglang.launch_server"]);
+  if (r.code === 1) {
+    return { ok: true, running: false, servedModel: null };
+  }
+  if (r.code !== 0) {
+    const err = (r.stderr.trim() || r.stdout.trim() || `exit ${r.code}`).slice(0, 400);
+    return { ok: false, error: err || "pgrep failed (is procps installed in the container?)" };
+  }
+
+  const line = r.stdout.trim().split("\n")[0] ?? "";
+  let servedModel: string | null = null;
+
+  const psCmd =
+    'pid=$(pgrep -f sglang.launch_server | head -1); [ -n "$pid" ] && ps -ww -p "$pid" -o args= 2>/dev/null || true';
+  const ps = await dockerExec(container, ["sh", "-c", psCmd]);
+  if (ps.code === 0 && ps.stdout.trim()) {
+    servedModel = parseServedModelFromArgs(ps.stdout);
+  }
+
+  if (servedModel === null) {
+    const ids = await fetchInferenceModelIds();
+    if (ids && ids.length > 0) {
+      servedModel = ids[0] ?? null;
+    }
+  }
+
+  return {
+    ok: true,
+    running: true,
+    detail: line.slice(0, 280),
+    servedModel,
+  };
+}
+
+export type RunLaunchResult =
+  | { ok: true }
+  | { ok: false; error: string; stderr?: string; conflict?: boolean };
+
+export type LaunchLogResult =
+  | { ok: true; text: string; missing?: boolean }
+  | { ok: false; error: string };
+
+/** Last lines of the launch log inside the container (for UI / API). */
+export async function getLaunchLogTail(
+  container: string,
+  tailLines: number = DEFAULT_LAUNCH_LOG_TAIL_LINES,
+): Promise<LaunchLogResult> {
+  try {
+    assertSafeContainerName(container);
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Invalid container name" };
+  }
+  const r = await dockerExec(container, [
+    "tail",
+    "-n",
+    String(Math.min(Math.max(1, Math.trunc(tailLines)), 10_000)),
+    LAUNCH_LOG_PATH,
+  ]);
+  if (r.code !== 0) {
+    const err = (r.stderr.trim() || r.stdout.trim()).slice(0, 200);
+    if (/no such file|not such file/i.test(err) || r.code === 1) {
+      return {
+        ok: true,
+        text: "",
+        missing: true,
+      };
+    }
+    return {
+      ok: false,
+      error: err || `tail failed (exit ${r.code ?? "?"})`,
+    };
+  }
+  return { ok: true, text: normalizeLaunchLogText(r.stdout) };
+}
+
+export async function runLaunchScriptInContainer(
+  container: string,
+  scriptBasename: string,
+  argOverrides?: LaunchArgPair[],
+): Promise<RunLaunchResult> {
+  assertSafeContainerName(container);
+  if (!isAllowedLaunchScript(scriptBasename)) {
+    return { ok: false, error: "Unknown or disallowed script" };
+  }
+
+  const probe = await getLaunchServerStatus(container);
+  if (!probe.ok) {
+    return {
+      ok: false,
+      error: `Could not check if SGLang is already running: ${probe.error}`,
+    };
+  }
+  if (probe.running) {
+    return {
+      ok: false,
+      conflict: true,
+      error:
+        "SGLang launch_server already appears to be running in this container (pgrep matched sglang.launch_server). Stop it first, or pick another container.",
+    };
+  }
+
+  const inContainer = `${CONTAINER_SCRIPTS_DIR}/${scriptBasename}`;
+  const logPath = LAUNCH_LOG_PATH;
+  if (
+    argOverrides !== undefined &&
+    !argOverrides.every(
+      (a) =>
+        typeof a.key === "string" &&
+        a.key.startsWith("--") &&
+        a.key.length > 2 &&
+        /^[A-Za-z0-9-]+$/.test(a.key.slice(2)) &&
+        typeof a.value === "string" &&
+        typeof a.enabled === "boolean",
+    )
+  ) {
+    return { ok: false, error: "Invalid argOverrides format" };
+  }
+  const scriptsDir = path.join(findRepoRoot(), "scripts");
+  const hostScriptPath = path.join(scriptsDir, scriptBasename);
+  let overriddenScriptB64: string | null = null;
+  if (argOverrides && argOverrides.length > 0) {
+    let original = "";
+    try {
+      original = fs.readFileSync(hostScriptPath, "utf8");
+    } catch {
+      return { ok: false, error: "Could not read script for override" };
+    }
+    const lines = original.split(/\r?\n/);
+    const byKey = new Map(argOverrides.map((a) => [a.key, a]));
+    const updated = lines.flatMap((rawLine) => {
+      const m = rawLine.match(/^(\s*)(--[A-Za-z0-9][A-Za-z0-9-]*)(?:\s+.*)?$/);
+      if (!m) return [rawLine];
+      const key = m[2] ?? "";
+      const ov = byKey.get(key);
+      if (!ov) return [rawLine];
+      if (!ov.enabled) return [];
+      const indent = m[1] ?? "";
+      const hasSlash = rawLine.trimEnd().endsWith("\\");
+      return [`${indent}${ov.key} ${ov.value}${hasSlash ? " \\" : ""}`];
+    });
+    overriddenScriptB64 = Buffer.from(`${updated.join("\n")}\n`, "utf8").toString("base64");
+  }
+  /**
+   * Detached `docker exec` has no TTY; many loaders disable or break progress bars without one.
+   * `script -qefc` (util-linux) allocates a pseudo-terminal when available; fall back to plain bash.
+   */
+  const launchCommand =
+    overriddenScriptB64 === null
+      ? `bash ${inContainer}`
+      : `tmp="/workspace/.monitor/monitor-launch-${scriptBasename}.rendered.sh"; printf '%s' '${overriddenScriptB64}' | base64 -d > "$tmp" && chmod +x "$tmp" && bash "$tmp"; exit $?`;
+  const runScript =
+    `(command -v script >/dev/null 2>&1 && script -qefc '${launchCommand}' - || sh -c '${launchCommand}') >> ${logPath} 2>&1`;
+  const shellCmd = [
+    "mkdir -p /workspace/.monitor",
+    `printf '%s\\n' "---- $(date -u +%Y-%m-%dT%H:%M:%SZ) starting ${scriptBasename} ----" >> ${logPath}`,
+    runScript,
+  ].join(" && ");
+  const { code, stderr } = await dockerExecDetached(container, ["sh", "-c", shellCmd]);
+  if (code !== 0) {
+    return {
+      ok: false,
+      error: `docker exec failed (exit ${code ?? "?"})`,
+      stderr: stderr.trim() || undefined,
+    };
+  }
+  return { ok: true };
+}
+
+/** Kill processes matching `sglang.launch_server` (same pattern as `getLaunchServerStatus`). */
+const STOP_LAUNCH_SHELL = `p=$(pgrep -f sglang.launch_server||true); [ -z "$p" ]&&exit 0; kill -TERM $p 2>/dev/null; for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do q=$(pgrep -f sglang.launch_server||true); [ -z "$q" ]&&exit 0; sleep 1; done; p2=$(pgrep -f sglang.launch_server||true); [ -n "$p2" ]&&kill -KILL $p2 2>/dev/null; exit 0`;
+
+export type StopLaunchResult =
+  | { ok: true; wasRunning: boolean; message: string }
+  | { ok: false; error: string; stderr?: string };
+
+export async function stopLaunchServerInContainer(container: string): Promise<StopLaunchResult> {
+  try {
+    assertSafeContainerName(container);
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Invalid container name" };
+  }
+
+  const before = await getLaunchServerStatus(container);
+  if (!before.ok) {
+    return { ok: false, error: before.error };
+  }
+  if (!before.running) {
+    return {
+      ok: true,
+      wasRunning: false,
+      message: "SGLang launch_server is not running in this container.",
+    };
+  }
+
+  const r = await dockerExec(container, ["sh", "-c", STOP_LAUNCH_SHELL]);
+  if (r.code !== 0) {
+    return {
+      ok: false,
+      error: `Stop command failed (exit ${r.code ?? "?"})`,
+      stderr: (r.stderr.trim() || r.stdout.trim()) || undefined,
+    };
+  }
+
+  const after = await getLaunchServerStatus(container);
+  if (!after.ok) {
+    return {
+      ok: true,
+      wasRunning: true,
+      message: `Stop completed but status could not be re-checked: ${after.error}`,
+    };
+  }
+  if (after.running) {
+    return {
+      ok: false,
+      error:
+        "launch_server still appears to be running after SIGTERM/SIGKILL. Try `docker exec` into the container or restart it.",
+    };
+  }
+
+  return {
+    ok: true,
+    wasRunning: true,
+    message: "Stopped SGLang launch_server in this container.",
+  };
+}
