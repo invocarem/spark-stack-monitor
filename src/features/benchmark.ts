@@ -5,7 +5,7 @@
  * Console stays quiet until then — use Network → POST …/benchmark (pending).
  */
 
-import { withProviderHeaders, withProviderQuery } from "../app/provider";
+import { getMonitorProvider, withProviderHeaders, withProviderQuery } from "../app/provider";
 
 /** Max wait for the whole benchmark HTTP response (all completions on the server). */
 const BENCHMARK_FETCH_TIMEOUT_MS = 900_000;
@@ -41,6 +41,10 @@ function setBenchStatus(message: string, isError = false): void {
   if (!statusEl) return;
   statusEl.textContent = message;
   statusEl.classList.toggle("error", isError);
+}
+
+function providerLabel(): string {
+  return getMonitorProvider() === "vllm" ? "vLLM" : "SGLang";
 }
 
 function formatResults(data: BenchmarkOk): string {
@@ -117,7 +121,7 @@ async function runBenchmark(): Promise<void> {
   const tick = window.setInterval(() => {
     const s = Math.floor((Date.now() - started) / 1000);
     setBenchStatus(
-      `Running benchmark… ${s}s (waiting for the dashboard API; it finishes all ${Math.floor(requests)} request(s) to SGLang first). Open DevTools → Network → POST …/benchmark if this stays pending.`,
+      `Running benchmark… ${s}s (waiting for the dashboard API; it finishes all ${Math.floor(requests)} request(s) to ${providerLabel()} first). Open DevTools → Network → POST …/benchmark if this stays pending.`,
     );
   }, 1000);
 
@@ -171,7 +175,7 @@ async function runBenchmark(): Promise<void> {
   } catch (e) {
     if (e instanceof Error && e.name === "AbortError") {
       setBenchStatus(
-        `Benchmark HTTP timed out after ${BENCHMARK_FETCH_TIMEOUT_MS / 1000}s. Check that SGLang is up and consider fewer requests, lower concurrency, or lower max_tokens (large max_tokens makes each completion much slower).`,
+        `Benchmark HTTP timed out after ${BENCHMARK_FETCH_TIMEOUT_MS / 1000}s. Check that ${providerLabel()} is up and consider fewer requests, lower concurrency, or lower max_tokens (large max_tokens makes each completion much slower).`,
         true,
       );
     } else {

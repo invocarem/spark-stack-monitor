@@ -4,6 +4,7 @@
  */
 
 import { pickPreferredContainer } from "./container-preferences";
+import { getMonitorProvider, onMonitorProviderChange, withProviderQuery } from "../app/provider";
 
 /** Render terminal CR behavior so progress bars update in-place. */
 function normalizeProbeText(text: string): string {
@@ -66,6 +67,17 @@ const outEl = document.querySelector<HTMLPreElement>("#logs-out");
 
 let autoTimer: ReturnType<typeof setInterval> | null = null;
 
+function stickToLatestLogLines(): void {
+  if (!outEl || !chkAuto?.checked) return;
+  outEl.scrollTop = outEl.scrollHeight;
+}
+
+function launchLogPathForProvider(): string {
+  return getMonitorProvider() === "vllm"
+    ? "/workspace/.monitor/vllm-launch.log"
+    : "/workspace/.monitor/sglang-launch.log";
+}
+
 function stripSlashName(names: string): string {
   const n = names.trim().split(/\s+/)[0] ?? "";
   return n.startsWith("/") ? n.slice(1) : n;
@@ -123,7 +135,7 @@ async function refreshLog(options: { quiet?: boolean } = {}): Promise<void> {
   try {
     if (source === "launch") {
       setStatus(`Loading launch log (${container})…`);
-      const res = await fetch(`/api/launch/log?container=${encodeURIComponent(container)}`);
+      const res = await fetch(withProviderQuery(`/api/launch/log?container=${encodeURIComponent(container)}`));
       const body = (await res.json()) as {
         text?: string;
         missing?: boolean;
@@ -135,13 +147,15 @@ async function refreshLog(options: { quiet?: boolean } = {}): Promise<void> {
         return;
       }
       if (body.missing) {
+        const logPath = launchLogPathForProvider();
         outEl.textContent =
-          "(No launch log file yet. Run a script from the Launch tab once, or the container cannot read /workspace/.monitor/sglang-launch.log.)";
+          `(No launch log file yet. Run a script from the Launch tab once, or the container cannot read ${logPath}.)`;
         setStatus("Launch log file not found.");
         return;
       }
       const t = typeof body.text === "string" ? normalizeProbeText(body.text) : "";
       outEl.textContent = t.trim() ? t : "(Log file is empty.)";
+      stickToLatestLogLines();
       setStatus(`Launch script log — ${container}`);
       return;
     }
@@ -164,9 +178,11 @@ async function refreshLog(options: { quiet?: boolean } = {}): Promise<void> {
     outEl.textContent = looksEmpty
       ? `${dockerText}\n\n---\nMonitor stack containers use PID 1 \`sleep infinity\`; \`docker logs\` only shows that process, not \`docker exec\` / Launch tab scripts. For model load progress and server output, switch Source to “Launch script log”.`
       : dockerText;
+    stickToLatestLogLines();
     setStatus(`Docker logs (PID 1) — ${container}`);
   } catch (e) {
     outEl.textContent = e instanceof Error ? e.message : String(e);
+    stickToLatestLogLines();
     setStatus("Request failed.", true);
   } finally {
     if (!quiet && btnRefresh) btnRefresh.disabled = false;
@@ -201,7 +217,7 @@ async function loadContainers(): Promise<void> {
       opt.textContent = `${name} — ${row.Image}`;
       selContainer.appendChild(opt);
     }
-    const preferred = pickPreferredContainer(rows);
+    const preferred = pickPreferredContainer(rows, getMonitorProvider());
     if (preferred) selContainer.value = preferred;
     setStatus(`Loaded ${rows.length} container(s).`);
     void refreshLog({ quiet: true });
@@ -223,5 +239,8 @@ export function initLogs(): void {
   chkAuto?.addEventListener("change", () => setAuto(chkAuto.checked));
   selContainer?.addEventListener("change", () => void refreshLog({ quiet: true }));
   selSource?.addEventListener("change", () => void refreshLog({ quiet: true }));
+  onMonitorProviderChange(() => {
+    void loadContainers();
+  });
   void loadContainers();
 }

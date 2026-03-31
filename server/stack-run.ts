@@ -13,9 +13,12 @@ import path from "node:path";
 import { assertSafeContainerName, dockerHost } from "./docker.js";
 import { findRepoRoot } from "./repo-root.js";
 
+export type StackProvider = "sglang" | "vllm";
+
 export type StackPreset = {
   id: string;
   label: string;
+  provider: StackProvider;
   /** For documentation only; same layout as `containers/*.sh`. */
   matchesScript: string;
   containerName: string;
@@ -28,6 +31,7 @@ export const STACK_PRESETS: readonly StackPreset[] = [
   {
     id: "dgx_spark_tf5",
     label: "SciTrera DGX Spark SGLang (tf5)",
+    provider: "sglang",
     matchesScript: "containers/sglang/run-docker.sh",
     containerName: "sglang_node_tf5",
     image: "scitrera/dgx-spark-sglang:0.5.9-t5",
@@ -36,10 +40,20 @@ export const STACK_PRESETS: readonly StackPreset[] = [
   {
     id: "lmsys_spark",
     label: "LM.Sys SGLang (spark)",
+    provider: "sglang",
     matchesScript: "containers/sglang/run-docker-openai.sh",
     containerName: "sglang_node",
     image: "lmsysorg/sglang:spark",
     extraEnv: ["TIKTOKEN_ENCODINGS_BASE=/tiktoken_encodings"],
+  },
+  {
+    id: "vllm_tf5",
+    label: "vLLM Node (tf5)",
+    provider: "vllm",
+    matchesScript: "containers/vllm/run-docker.sh",
+    containerName: "vllm_node_tf5",
+    image: "vllm-node-tf5:latest",
+    extraEnv: [],
   },
 ] as const;
 
@@ -68,6 +82,10 @@ async function containerState(
 
 export function getStackPreset(id: string): StackPreset | undefined {
   return PRESET_BY_ID.get(id);
+}
+
+export function listStackPresets(provider: StackProvider): StackPreset[] {
+  return STACK_PRESETS.filter((p) => p.provider === provider);
 }
 
 export type RunStackResult =

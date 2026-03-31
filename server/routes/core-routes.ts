@@ -1,20 +1,39 @@
-import type { Hono } from "hono";
+import type { Context, Hono } from "hono";
 import {
   listRunningContainers,
   runToolInContainer,
   assertSafeContainerName,
+  runDiagnosticsInContainer,
+  validateDiagnosticsCommand,
   TOOLS,
   DEFAULT_TOOL_ID,
   getToolMeta,
 } from "../docker.js";
 import {
+  type LaunchProvider,
   getLaunchLogTail,
   getLaunchServerStatus,
   listLaunchScripts,
   runLaunchScriptInContainer,
   stopLaunchServerInContainer,
 } from "../launch-scripts.js";
-import { STACK_PRESETS, runStackPreset, stopStackContainer } from "../stack-run.js";
+import { listStackPresets, runStackPreset, stopStackContainer } from "../stack-run.js";
+
+type ProviderId = "sglang" | "vllm";
+
+function pickProvider(c: Context): ProviderId {
+  const q = c.req.query("provider")?.trim().toLowerCase();
+  if (q === "sglang" || q === "vllm") return q;
+  const h = c.req.header("x-monitor-provider")?.trim().toLowerCase();
+  if (h === "sglang" || h === "vllm") return h;
+  const env = process.env.MONITOR_PROVIDER?.trim().toLowerCase();
+  if (env === "sglang" || env === "vllm") return env;
+  return "sglang";
+}
+
+function launchProvider(c: Context): LaunchProvider {
+  return pickProvider(c);
+}
 
 export function registerCoreRoutes(app: Hono): void {
   app.get("/api/health", (c) => c.json({ ok: true }));
@@ -42,7 +61,7 @@ export function registerCoreRoutes(app: Hono): void {
 
   app.get("/api/stack/presets", (c) =>
     c.json({
-      presets: STACK_PRESETS.map((p) => ({
+      presets: listStackPresets(pickProvider(c)).map((p) => ({
         id: p.id,
         label: p.label,
         containerName: p.containerName,
@@ -179,9 +198,61 @@ export function registerCoreRoutes(app: Hono): void {
     });
   });
 
+  app.post("/api/diagnostics/exec", async (c) => {
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ error: "Invalid JSON body" }, 400);
+    }
+    if (typeof body !== "object" || body === null) {
+      return c.json({ error: "Expected JSON object" }, 400);
+    }
+    const o = body as Record<string, unknown>;
+    const container = typeof o.container === "string" ? o.container.trim() : "";
+    const command = typeof o.command === "string" ? o.command.trim() : "";
+    const timeoutMsRaw = typeof o.timeoutMs === "number" ? o.timeoutMs : undefined;
+    if (!container) return c.json({ error: "Missing container" }, 400);
+    if (!command) return c.json({ error: "Missing command" }, 400);
+    try {
+      assertSafeContainerName(container);
+    } catch {
+      return c.json({ error: "Invalid container name" }, 400);
+    }
+    const blocked = validateDiagnosticsCommand(command);
+    if (blocked) {
+      return c.json({ error: blocked }, 400);
+    }
+    const timeoutMs =
+      timeoutMsRaw && Number.isFinite(timeoutMsRaw)
+        ? Math.max(1000, Math.min(120_000, Math.trunc(timeoutMsRaw)))
+        : 15_000;
+    try {
+      const result = await runDiagnosticsInContainer(container, command, { timeoutMs });
+      const statusCode = result.timedOut ? 408 : result.code === 0 ? 200 : 502;
+      return c.json(
+        {
+          ok: result.code === 0 && !result.timedOut,
+          container,
+          command,
+          exitCode: result.code,
+          stdout: result.stdout,
+          stderr: result.stderr,
+          timedOut: result.timedOut,
+          truncated: result.truncated,
+          durationMs: result.durationMs,
+        },
+        statusCode,
+      );
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      return c.json({ error: message }, 500);
+    }
+  });
+
   app.get("/api/launch-scripts", (c) => {
     try {
-      return c.json({ scripts: listLaunchScripts() });
+      return c.json({ scripts: listLaunchScripts(launchProvider(c)) });
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       return c.json({ error: message, scripts: [] }, 500);
@@ -193,7 +264,7 @@ export function registerCoreRoutes(app: Hono): void {
     if (!container) {
       return c.json({ error: "Missing query parameter: container" }, 400);
     }
-    const status = await getLaunchServerStatus(container);
+    const status = await getLaunchServerStatus(launchProvider(c), container);
     if (!status.ok) {
       return c.json({ error: status.error, running: null, servedModel: null }, 502);
     }
@@ -213,7 +284,7 @@ export function registerCoreRoutes(app: Hono): void {
     const parsed = Number(linesParam);
     const lines =
       linesParam && Number.isFinite(parsed) && parsed > 0 ? Math.trunc(parsed) : undefined;
-    const result = await getLaunchLogTail(container, lines);
+    const result = await getLaunchLogTail(launchProvider(c), container, lines);
     if (!result.ok) {
       return c.json({ error: result.error, text: null, missing: null }, 502);
     }
@@ -251,7 +322,12 @@ export function registerCoreRoutes(app: Hono): void {
     if (!script) {
       return c.json({ error: "Missing script" }, 400);
     }
-    const result = await runLaunchScriptInContainer(container, script, argOverrides);
+    const result = await runLaunchScriptInContainer(
+      launchProvider(c),
+      container,
+      script,
+      argOverrides,
+    );
     if (!result.ok) {
       const code = result.conflict ? 409 : 400;
       return c.json(
@@ -263,7 +339,7 @@ export function registerCoreRoutes(app: Hono): void {
       ok: true,
       detached: true,
       message:
-        "Start requested (detached). The sglang.launch_server process may take minutes to appear; refresh status below or open SGLang metrics.",
+        "Start requested (detached). Refresh status below or open Metrics while the server initializes.",
     });
   });
 
@@ -282,7 +358,7 @@ export function registerCoreRoutes(app: Hono): void {
     if (!container) {
       return c.json({ error: "Missing container" }, 400);
     }
-    const result = await stopLaunchServerInContainer(container);
+    const result = await stopLaunchServerInContainer(launchProvider(c), container);
     if (!result.ok) {
       return c.json({ error: result.error, stderr: result.stderr }, 502);
     }

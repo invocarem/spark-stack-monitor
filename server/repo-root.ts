@@ -8,17 +8,38 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+function isRepoRoot(candidate: string): boolean {
+  try {
+    const scriptsDir = path.join(candidate, "scripts");
+    const serverDir = path.join(candidate, "server");
+    if (!fs.statSync(scriptsDir).isDirectory()) return false;
+    if (!fs.statSync(serverDir).isDirectory()) return false;
+
+    const pkgPath = path.join(candidate, "package.json");
+    const pkgRaw = fs.readFileSync(pkgPath, "utf8");
+    const pkg = JSON.parse(pkgRaw) as { name?: unknown };
+    return pkg.name === "spark-stack-monitor";
+  } catch {
+    return false;
+  }
+}
+
 export function findRepoRoot(): string {
   const env = process.env.MONITOR_REPO_ROOT?.trim();
-  if (env) return path.resolve(env);
-  for (let depth = 3; depth <= 6; depth++) {
-    const root = path.resolve(__dirname, ...Array<string>(depth).fill(".."));
-    const scripts = path.join(root, "scripts");
-    try {
-      if (fs.statSync(scripts).isDirectory()) return root;
-    } catch {
-      /* try next depth */
-    }
+  if (env) {
+    const resolved = path.resolve(env);
+    if (isRepoRoot(resolved)) return resolved;
   }
-  return path.resolve(__dirname, "..", "..", "..");
+
+  const fromCwd = path.resolve(process.cwd());
+  if (isRepoRoot(fromCwd)) return fromCwd;
+
+  for (let depth = 0; depth <= 8; depth++) {
+    const root = path.resolve(__dirname, ...Array<string>(depth).fill(".."));
+    if (isRepoRoot(root)) return root;
+  }
+
+  // Safe fallback for local development layouts.
+  const fallback = path.resolve(__dirname, "..", "..", "..");
+  return isRepoRoot(fallback) ? fallback : fromCwd;
 }

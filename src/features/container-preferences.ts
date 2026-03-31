@@ -8,10 +8,15 @@ type PreferredContainer = {
   image: string;
 };
 
-const PREFERRED_CONTAINERS: readonly PreferredContainer[] = [
-  { name: "sglang_node_tf5", image: "scitrera/dgx-spark-sglang:0.5.9-t5" },
-  { name: "sglang_node", image: "lmsysorg/sglang:spark" },
-];
+type MonitorProvider = "sglang" | "vllm";
+
+const PREFERRED_CONTAINERS: Record<MonitorProvider, readonly PreferredContainer[]> = {
+  sglang: [
+    { name: "sglang_node_tf5", image: "scitrera/dgx-spark-sglang:0.5.9-t5" },
+    { name: "sglang_node", image: "lmsysorg/sglang:spark" },
+  ],
+  vllm: [{ name: "vllm_node_tf5", image: "vllm-node-tf5:latest" }],
+};
 
 function firstContainerName(names: string): string {
   const first = names.trim().split(/\s+/)[0] ?? "";
@@ -24,13 +29,17 @@ function imageMatches(actual: string, expected: string): boolean {
   return a === e || a.startsWith(`${e}@`);
 }
 
-export function pickPreferredContainer(rows: readonly ContainerRow[]): string | null {
-  for (const preferred of PREFERRED_CONTAINERS) {
+export function pickPreferredContainer(
+  rows: readonly ContainerRow[],
+  provider: MonitorProvider = "sglang",
+): string | null {
+  const preferredList = PREFERRED_CONTAINERS[provider];
+  for (const preferred of preferredList) {
     const exact = rows.find((row) => firstContainerName(row.Names) === preferred.name);
     if (exact) return preferred.name;
   }
 
-  for (const preferred of PREFERRED_CONTAINERS) {
+  for (const preferred of preferredList) {
     const byImage = rows.find((row) => imageMatches(row.Image, preferred.image));
     if (byImage) return firstContainerName(byImage.Names);
   }

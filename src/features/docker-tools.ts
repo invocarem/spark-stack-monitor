@@ -4,6 +4,7 @@
  */
 
 import { pickPreferredContainer } from "./container-preferences";
+import { getMonitorProvider, onMonitorProviderChange, withProviderQuery } from "../app/provider";
 
 type ContainerRow = {
   ID: string;
@@ -20,8 +21,49 @@ type ToolInfo = {
   format: "json" | "text";
 };
 
+type DiagnosticsPreset = {
+  id: string;
+  label: string;
+  command: string;
+};
+
 const DEFAULT_TOOL_ID = "collect_env";
 const TOOL_LAUNCH_LOG_200 = "launch_log_200";
+const DEFAULT_DIAGNOSTICS_TIMEOUT_MS = 15000;
+
+const DIAGNOSTICS_PRESETS: readonly DiagnosticsPreset[] = [
+  {
+    id: "quick_health",
+    label: "Quick health check",
+    command: "echo '== host ==' && uname -a && echo && echo '== uptime ==' && uptime && echo && echo '== disk ==' && df -h && echo && echo '== memory ==' && free -h",
+  },
+  {
+    id: "gpu_status",
+    label: "GPU status (nvidia-smi)",
+    command: "nvidia-smi",
+  },
+  {
+    id: "runtime_processes",
+    label: "LLM runtime processes",
+    command: "ps aux | grep -Ei 'python|vllm|sglang' || true",
+  },
+  {
+    id: "workspace_logs",
+    label: "Workspace + launch logs",
+    command: "ls -lah /workspace && echo && ls -lah /workspace/.monitor && echo && tail -n 200 /workspace/.monitor/*launch.log 2>/dev/null || true",
+  },
+  {
+    id: "python_env",
+    label: "Python env summary",
+    command: "python3 -V && pip list | grep -Ei 'torch|vllm|sglang|transformers|xformers' || true",
+  },
+] as const;
+
+function launchLogPathForProvider(): string {
+  return getMonitorProvider() === "vllm"
+    ? "/workspace/.monitor/vllm-launch.log"
+    : "/workspace/.monitor/sglang-launch.log";
+}
 
 function normalizeProbeText(text: string): string {
   if (!text) return text;
@@ -39,10 +81,19 @@ const FALLBACK_PROBE_TOOLS: readonly { id: string; text: string }[] = [
 
 const sel = document.querySelector<HTMLSelectElement>("#sel-container");
 const selTool = document.querySelector<HTMLSelectElement>("#sel-tool");
+const selMode = document.querySelector<HTMLSelectElement>("#sel-diagnostics-mode");
+const selDiagPreset = document.querySelector<HTMLSelectElement>("#sel-diag-preset");
+const selDiagTimeout = document.querySelector<HTMLSelectElement>("#sel-diag-timeout");
+const inputDiagCommand = document.querySelector<HTMLInputElement>("#input-diag-command");
+const fieldToolSelect = document.querySelector<HTMLLabelElement>("#field-tool-select");
+const fieldDiagPreset = document.querySelector<HTMLLabelElement>("#field-diag-preset");
+const fieldDiagCommand = document.querySelector<HTMLLabelElement>("#field-diag-command");
+const fieldDiagTimeout = document.querySelector<HTMLLabelElement>("#field-diag-timeout");
 const btnRun = document.querySelector<HTMLButtonElement>("#btn-run");
 const containerField = document.querySelector<HTMLDivElement>("#docker-container-field");
 const statusDocker = document.querySelector<HTMLParagraphElement>("#status-docker");
 const outEl = document.querySelector<HTMLPreElement>("#out");
+const outMetaEl = document.querySelector<HTMLPreElement>("#out-meta");
 
 function stripSlashName(names: string): string {
   const n = names.trim().split(/\s+/)[0] ?? "";
@@ -57,6 +108,19 @@ function setDockerStatus(message: string, isError = false): void {
 
 function prettyJson(value: unknown): string {
   return JSON.stringify(value, null, 2);
+}
+
+function isDiagnosticsMode(): boolean {
+  return selMode?.value === "diagnostics";
+}
+
+function setDiagnosticsUIVisibility(enabled: boolean): void {
+  fieldToolSelect?.classList.toggle("hidden", enabled);
+  fieldDiagPreset?.classList.toggle("hidden", !enabled);
+  fieldDiagCommand?.classList.toggle("hidden", !enabled);
+  fieldDiagTimeout?.classList.toggle("hidden", !enabled);
+  if (!btnRun) return;
+  btnRun.textContent = enabled ? "Run diagnostics" : "Run";
 }
 
 function formatProbeResponse(body: Record<string, unknown>): string {
@@ -123,6 +187,23 @@ async function loadTools(): Promise<void> {
   }
 }
 
+function loadDiagnosticsPresets(): void {
+  if (!selDiagPreset) return;
+  selDiagPreset.innerHTML = "";
+  for (const p of DIAGNOSTICS_PRESETS) {
+    const opt = document.createElement("option");
+    opt.value = p.id;
+    opt.textContent = p.label;
+    selDiagPreset.appendChild(opt);
+  }
+  const first = DIAGNOSTICS_PRESETS[0];
+  if (first) {
+    selDiagPreset.value = first.id;
+    if (inputDiagCommand) inputDiagCommand.value = first.command;
+  }
+  if (selDiagTimeout) selDiagTimeout.value = String(DEFAULT_DIAGNOSTICS_TIMEOUT_MS);
+}
+
 async function loadContainers(): Promise<void> {
   if (!sel) return;
   const previous = sel.value.trim();
@@ -145,7 +226,10 @@ async function loadContainers(): Promise<void> {
       opt.textContent = "(no running containers)";
       sel.appendChild(opt);
       if (containerField) containerField.hidden = false;
-      setDockerStatus("No running containers. Start one with ./containers/sglang/run-docker.sh");
+      const runHint = getMonitorProvider() === "vllm"
+        ? "./containers/vllm/run-docker.sh"
+        : "./containers/sglang/run-docker.sh";
+      setDockerStatus(`No running containers. Start one with ${runHint}`);
       return;
     }
     for (const row of rows) {
@@ -158,7 +242,7 @@ async function loadContainers(): Promise<void> {
     if (previous && rows.some((row) => stripSlashName(row.Names) === previous)) {
       sel.value = previous;
     } else {
-      const preferred = pickPreferredContainer(rows);
+      const preferred = pickPreferredContainer(rows, getMonitorProvider());
       if (preferred) sel.value = preferred;
     }
     if (containerField) containerField.hidden = rows.length <= 1;
@@ -176,6 +260,78 @@ async function runTool(): Promise<void> {
     setDockerStatus("Pick a container first.", true);
     return;
   }
+  if (isDiagnosticsMode()) {
+    const command = inputDiagCommand?.value.trim() ?? "";
+    if (!command) {
+      setDockerStatus("Diagnostics command is required.", true);
+      return;
+    }
+    const timeoutMsRaw = Number(selDiagTimeout?.value ?? DEFAULT_DIAGNOSTICS_TIMEOUT_MS);
+    const timeoutMs = Number.isFinite(timeoutMsRaw) && timeoutMsRaw > 0
+      ? Math.trunc(timeoutMsRaw)
+      : DEFAULT_DIAGNOSTICS_TIMEOUT_MS;
+    setDockerStatus(`Running diagnostics in ${container}…`);
+    btnRun.disabled = true;
+    try {
+      const res = await fetch("/api/diagnostics/exec", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          container,
+          command,
+          timeoutMs,
+        }),
+      });
+      const body = (await res.json()) as {
+        ok?: boolean;
+        error?: string;
+        exitCode?: number | null;
+        stdout?: string;
+        stderr?: string;
+        timedOut?: boolean;
+        truncated?: boolean;
+        durationMs?: number;
+      };
+      const outParts: string[] = [];
+      if (typeof body.stdout === "string" && body.stdout) outParts.push(normalizeProbeText(body.stdout));
+      if (typeof body.stderr === "string" && body.stderr) {
+        outParts.push("--- stderr ---");
+        outParts.push(normalizeProbeText(body.stderr));
+      }
+      outEl.textContent = outParts.join("\n").trim() || "(No output.)";
+      if (outMetaEl) {
+        const metaLines = [
+          `container: ${container}`,
+          `command: ${command}`,
+          `exitCode: ${String(body.exitCode ?? "null")}`,
+          `durationMs: ${String(body.durationMs ?? "n/a")}`,
+          `timedOut: ${body.timedOut === true ? "yes" : "no"}`,
+          `truncated: ${body.truncated === true ? "yes" : "no"}`,
+        ];
+        outMetaEl.textContent = metaLines.join("\n");
+        outMetaEl.classList.remove("hidden");
+      }
+      if (!res.ok) {
+        setDockerStatus(
+          body.error ?? (body.timedOut ? "Diagnostics command timed out." : `Run failed (${res.status})`),
+          true,
+        );
+        return;
+      }
+      setDockerStatus("Diagnostics command completed.");
+    } catch (e) {
+      outEl.textContent = "";
+      if (outMetaEl) {
+        outMetaEl.textContent = "—";
+        outMetaEl.classList.add("hidden");
+      }
+      setDockerStatus(e instanceof Error ? e.message : String(e), true);
+    } finally {
+      btnRun.disabled = false;
+    }
+    return;
+  }
+
   const tool = selTool.value.trim() || DEFAULT_TOOL_ID;
   setDockerStatus(
     tool === TOOL_LAUNCH_LOG_200
@@ -186,7 +342,7 @@ async function runTool(): Promise<void> {
   try {
     if (tool === TOOL_LAUNCH_LOG_200) {
       const res = await fetch(
-        `/api/launch/log?container=${encodeURIComponent(container)}&lines=200`,
+        withProviderQuery(`/api/launch/log?container=${encodeURIComponent(container)}&lines=200`),
       );
       const body = (await res.json()) as {
         text?: string;
@@ -199,14 +355,19 @@ async function runTool(): Promise<void> {
         return;
       }
       if (body.missing) {
+        const logPath = launchLogPathForProvider();
         outEl.textContent =
-          "(No launch log file yet. Run a script from the Launch tab once, or the container cannot read /workspace/.monitor/sglang-launch.log.)";
+          `(No launch log file yet. Run a script from the Launch tab once, or the container cannot read ${logPath}.)`;
         setDockerStatus("Launch log file not found.");
         return;
       }
       const text = typeof body.text === "string" ? normalizeProbeText(body.text) : "";
       outEl.textContent = text.trim() ? text : "(Log file is empty.)";
       setDockerStatus(`Launch script log (last 200 lines) — ${container}`);
+      if (outMetaEl) {
+        outMetaEl.textContent = "—";
+        outMetaEl.classList.add("hidden");
+      }
       return;
     }
 
@@ -224,6 +385,10 @@ async function runTool(): Promise<void> {
       display = `${display}\n\n---\nMonitor stack PID 1 is usually \`sleep infinity\`, so this stays empty. For LLM/load output, open the Logs tab and use “Launch script log”.`;
     }
     outEl.textContent = display;
+    if (outMetaEl) {
+      outMetaEl.textContent = "—";
+      outMetaEl.classList.add("hidden");
+    }
     if (!res.ok) {
       setDockerStatus(
         typeof body.error === "string" ? body.error : `Run failed (${res.status})`,
@@ -242,6 +407,24 @@ async function runTool(): Promise<void> {
 
 export function initDockerTools(): void {
   btnRun?.addEventListener("click", () => void runTool());
+  selMode?.addEventListener("change", () => {
+    const diagnostics = isDiagnosticsMode();
+    setDiagnosticsUIVisibility(diagnostics);
+    setDockerStatus(
+      diagnostics
+        ? "Diagnostics shell enabled. Commands run with docker exec -i … bash -lc."
+        : "Structured tools enabled.",
+    );
+  });
+  selDiagPreset?.addEventListener("change", () => {
+    const selected = DIAGNOSTICS_PRESETS.find((p) => p.id === selDiagPreset.value);
+    if (selected && inputDiagCommand) inputDiagCommand.value = selected.command;
+  });
+  onMonitorProviderChange(() => {
+    void loadContainers();
+  });
+  loadDiagnosticsPresets();
+  setDiagnosticsUIVisibility(false);
   void loadTools();
   void loadContainers();
 }

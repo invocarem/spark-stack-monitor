@@ -2,7 +2,7 @@ import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { registerCoreRoutes } from "./routes/core-routes.js";
-import { registerSglangRoutes } from "./routes/sglang-routes.js";
+import { registerInferenceRoutes } from "./routes/inference-routes.js";
 
 const app = new Hono();
 
@@ -14,7 +14,7 @@ app.use(
 );
 
 registerCoreRoutes(app);
-registerSglangRoutes(app);
+registerInferenceRoutes(app);
 
 const port = Number(process.env.MONITOR_API_PORT ?? "8787");
 

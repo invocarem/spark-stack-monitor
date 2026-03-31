@@ -23,7 +23,8 @@ python3 -m sglang.launch_server \
     --enable-metrics \
     --attention-backend ${ATTENTION_BACKEND} \
     --fp8-gemm-backend ${FP8_GEMM_BACKEND} \
-    --tool-call-parser ${TOOL_CALL_PARSER} --reasoning-parser qwen3 \
+    --tool-call-parser ${TOOL_CALL_PARSER} \
+    --reasoning-parser qwen3 \
     --speculative-algo NEXTN \
     --speculative-num-steps 3 \
     --speculative-eagle-topk 1 \

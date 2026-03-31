@@ -1,8 +1,15 @@
 /**
- * Launch tab: run repo `scripts/sglang/*.sh` inside the stack container via `docker exec` (detached).
+ * Launch tab: run provider scripts (`scripts/sglang/*.sh` or `scripts/vllm/*.sh`)
+ * inside the stack container via `docker exec` (detached).
  * Launch server detection: `GET /api/launch/status` (pgrep, then served model from ps /v1/models).
  */
 
+import {
+  type MonitorProvider,
+  getMonitorProvider,
+  onMonitorProviderChange,
+  withProviderQuery,
+} from "../app/provider";
 import { getPreferredModel, setPreferredModel } from "../sglang/model-prefs";
 import { pickPreferredContainer } from "./container-preferences";
 
@@ -39,11 +46,39 @@ const statusServerEl = document.querySelector<HTMLParagraphElement>("#status-lau
 const statusDetailEl = document.querySelector<HTMLParagraphElement>("#status-launch-detail");
 const statusScriptEl = document.querySelector<HTMLParagraphElement>("#status-launch-script");
 const btnApplyModel = document.querySelector<HTMLButtonElement>("#btn-launch-apply-model");
+const launchTitle = document.querySelector<HTMLHeadingElement>("#launch-title");
+const launchScriptDirLabel = document.querySelector<HTMLElement>("#launch-script-dir-label");
+const launchCmdLabel = document.querySelector<HTMLElement>("#launch-cmd-label");
+const launchHostDirLabel = document.querySelector<HTMLElement>("#launch-host-dir-label");
+const launchContainerDirLabel = document.querySelector<HTMLElement>("#launch-container-dir-label");
+const launchLogPathLabel = document.querySelector<HTMLElement>("#launch-log-path-label");
+const launchMetricsLabel = document.querySelector<HTMLElement>("#launch-metrics-label");
+const launchArgsCmdLabel = document.querySelector<HTMLElement>("#launch-args-cmd-label");
 
 /** `true` = pgrep saw launch_server; `false` = not running; `null` = not checked or unknown */
 let lastServerRunning: boolean | null = null;
 let lastServedModel: string | null = null;
 const scriptsById = new Map<string, LaunchScriptInfo>();
+
+function updateLaunchCopy(provider: MonitorProvider): void {
+  const isVllm = provider === "vllm";
+  if (launchTitle) {
+    launchTitle.innerHTML = isVllm
+      ? "Launch vLLM (<code>serve</code>)"
+      : "Launch SGLang (<code>launch_server</code>)";
+  }
+  const hostDir = isVllm ? "./scripts/vllm" : "./scripts/sglang";
+  const containerDir = isVllm ? "/workspace/scripts/vllm" : "/workspace/scripts/sglang";
+  const cmd = isVllm ? "vllm serve" : "python3 -m sglang.launch_server";
+  const logPath = isVllm ? "/workspace/.monitor/vllm-launch.log" : "/workspace/.monitor/sglang-launch.log";
+  if (launchScriptDirLabel) launchScriptDirLabel.textContent = hostDir;
+  if (launchCmdLabel) launchCmdLabel.textContent = cmd;
+  if (launchHostDirLabel) launchHostDirLabel.textContent = hostDir;
+  if (launchContainerDirLabel) launchContainerDirLabel.textContent = containerDir;
+  if (launchLogPathLabel) launchLogPathLabel.textContent = logPath;
+  if (launchMetricsLabel) launchMetricsLabel.textContent = isVllm ? "vLLM metrics" : "SGLang metrics";
+  if (launchArgsCmdLabel) launchArgsCmdLabel.textContent = cmd;
+}
 
 function stripSlashName(names: string): string {
   const n = names.trim().split(/\s+/)[0] ?? "";
@@ -147,8 +182,7 @@ function updateRunButtonState(): void {
   const blocked = lastServerRunning === true;
   btnRun.disabled = !c || !s || blocked;
   if (blocked) {
-    btnRun.title =
-      "sglang.launch_server appears to be running in this container (last check). Stop it or pick another container.";
+    btnRun.title = "A launch server appears to be running in this container (last check). Stop it or pick another container.";
   } else {
     btnRun.removeAttribute("title");
   }
@@ -174,7 +208,7 @@ async function refreshLaunchStatus(): Promise<void> {
   if (btnStopServer) btnStopServer.disabled = true;
   try {
     const res = await fetch(
-      `/api/launch/status?container=${encodeURIComponent(container)}`,
+      withProviderQuery(`/api/launch/status?container=${encodeURIComponent(container)}`),
     );
     const body = (await res.json()) as {
       running?: boolean | null;
@@ -213,7 +247,7 @@ async function refreshLaunchStatus(): Promise<void> {
           : null;
       const main = lastServedModel
         ? `Running — served model: ${lastServedModel}. Run script disabled.`
-        : `Running — served model not detected yet (retry Check or set SGLANG_BASE_URL). Run script disabled.`;
+        : `Running — served model not detected yet (retry Check). Run script disabled.`;
       setServerStatusLine("ok", main, body.detail?.trim() || null);
       if (lastServedModel && getPreferredModel().trim() !== lastServedModel) {
         setPreferredModel(lastServedModel);
@@ -245,7 +279,7 @@ async function refreshLaunchStatus(): Promise<void> {
 async function loadScripts(): Promise<void> {
   if (!selScript) return;
   try {
-    const res = await fetch("/api/launch-scripts");
+    const res = await fetch(withProviderQuery("/api/launch-scripts"));
     const body = (await res.json()) as {
       scripts?: LaunchScriptInfo[];
       error?: string;
@@ -258,16 +292,17 @@ async function loadScripts(): Promise<void> {
       opt.value = "";
       opt.textContent = body.error ?? "Failed to list scripts";
       selScript.appendChild(opt);
-      setScriptStatus(body.error ?? "Could not list scripts from ./scripts/sglang", true);
+      setScriptStatus(body.error ?? "Could not list scripts for selected provider", true);
       return;
     }
     if (scripts.length === 0) {
       const opt = document.createElement("option");
       opt.value = "";
-      opt.textContent = "(no .sh files in ./scripts/sglang)";
+      const provider = getMonitorProvider();
+      opt.textContent = `(no .sh files in ./scripts/${provider})`;
       selScript.appendChild(opt);
       setScriptStatus(
-        "No launch scripts found (repo ./scripts/sglang). Set MONITOR_REPO_ROOT if the API runs outside the repo.",
+        `No launch scripts found (repo ./scripts/${provider}). Set MONITOR_REPO_ROOT if the API runs outside the repo.`,
       );
       return;
     }
@@ -279,7 +314,7 @@ async function loadScripts(): Promise<void> {
       selScript.appendChild(opt);
     }
     renderLaunchArgs(selScript.value);
-    setScriptStatus(`Loaded ${scripts.length} script(s) from ./scripts/sglang.`);
+    setScriptStatus(`Loaded ${scripts.length} script(s) for ${getMonitorProvider()}.`);
   } catch (e) {
     selScript.innerHTML = "";
     const opt = document.createElement("option");
@@ -317,7 +352,7 @@ async function loadContainers(): Promise<void> {
       setApplyModelButton(false);
       setServerStatusLine(
         "error",
-        "No running containers. Start the stack (e.g. ./containers/sglang/run-docker.sh).",
+        "No running containers. Start the stack from the Container tab for the selected provider.",
         null,
       );
       setScriptStatus("No running containers.", true);
@@ -331,7 +366,7 @@ async function loadContainers(): Promise<void> {
       opt.textContent = `${name} — ${row.Image}`;
       selContainer.appendChild(opt);
     }
-    const preferred = pickPreferredContainer(rows);
+    const preferred = pickPreferredContainer(rows, getMonitorProvider());
     if (preferred) selContainer.value = preferred;
     setScriptStatus(`Loaded ${rows.length} container(s).`);
     await refreshLaunchStatus();
@@ -353,7 +388,7 @@ async function stopLaunchServer(): Promise<void> {
   if (btnStopServer) btnStopServer.disabled = true;
   if (btnCheck) btnCheck.disabled = true;
   try {
-    const res = await fetch("/api/launch/stop", {
+    const res = await fetch(withProviderQuery("/api/launch/stop"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ container }),
@@ -404,7 +439,7 @@ async function runLaunchScript(): Promise<void> {
   setScriptStatus(`Starting ${script} in ${container}…`);
   btnRun.disabled = true;
   try {
-    const res = await fetch("/api/launch", {
+    const res = await fetch(withProviderQuery("/api/launch"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -445,6 +480,7 @@ async function runLaunchScript(): Promise<void> {
 }
 
 export function initLaunch(): void {
+  updateLaunchCopy(getMonitorProvider());
   btnApplyModel?.addEventListener("click", () => {
     if (!lastServedModel) return;
     setPreferredModel(lastServedModel);
@@ -461,6 +497,16 @@ export function initLaunch(): void {
   btnCheck?.addEventListener("click", () => void refreshLaunchStatus());
   btnStopServer?.addEventListener("click", () => void stopLaunchServer());
   btnRun?.addEventListener("click", () => void runLaunchScript());
+  onMonitorProviderChange(() => {
+    updateLaunchCopy(getMonitorProvider());
+    lastServerRunning = null;
+    lastServedModel = null;
+    setApplyModelButton(false);
+    void (async () => {
+      await loadScripts();
+      await loadContainers();
+    })();
+  });
   void (async () => {
     await loadScripts();
     await loadContainers();

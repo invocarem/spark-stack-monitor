@@ -14,6 +14,17 @@ export type DockerResult = {
   stderr: string;
 };
 
+export type DiagnosticsExecOptions = {
+  timeoutMs?: number;
+  maxOutputBytes?: number;
+};
+
+export type DiagnosticsExecResult = DockerResult & {
+  timedOut: boolean;
+  truncated: boolean;
+  durationMs: number;
+};
+
 /** Run `docker …` on the host (stack containers, probes, etc.). */
 export function dockerHost(args: string[]): Promise<DockerResult> {
   return runDocker(args);
@@ -39,6 +50,27 @@ function runDocker(args: string[]): Promise<DockerResult> {
       resolve({ code, stdout, stderr });
     });
   });
+}
+
+const DANGEROUS_DIAGNOSTICS_PATTERNS: readonly RegExp[] = [
+  /(^|[\s;&|])(rm)\s+-rf?\s+\/($|[\s"'])/i,
+  /(^|[\s;&|])(mkfs|fdisk|parted)\b/i,
+  /(^|[\s;&|])(shutdown|reboot|poweroff|halt)\b/i,
+  /(^|[\s;&|])(dd)\s+if=/i,
+  /(^|[\s;&|])(killall?|pkill)\b/i,
+  />\s*\/dev\//i,
+];
+
+export function validateDiagnosticsCommand(command: string): string | null {
+  const text = command.trim();
+  if (!text) return "Command is required";
+  if (text.length > 2000) return "Command is too long (max 2000 chars)";
+  for (const pattern of DANGEROUS_DIAGNOSTICS_PATTERNS) {
+    if (pattern.test(text)) {
+      return "Command blocked by diagnostics safety policy";
+    }
+  }
+  return null;
 }
 
 export type RunningContainer = {
@@ -348,6 +380,86 @@ export async function dockerExec(
 ): Promise<DockerResult> {
   assertSafeContainerName(container);
   return runDocker(["exec", container, ...args]);
+}
+
+export async function runDiagnosticsInContainer(
+  container: string,
+  command: string,
+  options: DiagnosticsExecOptions = {},
+): Promise<DiagnosticsExecResult> {
+  assertSafeContainerName(container);
+  const timeoutMs = Math.max(1000, Math.min(120_000, Math.trunc(options.timeoutMs ?? 15_000)));
+  const maxOutputBytes = Math.max(1024, Math.min(2_000_000, Math.trunc(options.maxOutputBytes ?? 250_000)));
+
+  return new Promise((resolve, reject) => {
+    const started = Date.now();
+    const child = spawn("docker", ["exec", "-i", container, "bash", "-lc", command], {
+      windowsHide: true,
+    });
+
+    let stdout = "";
+    let stderr = "";
+    let stdoutBytes = 0;
+    let stderrBytes = 0;
+    let truncated = false;
+    let timedOut = false;
+
+    const capAppend = (chunk: string, target: "stdout" | "stderr"): void => {
+      const bytes = Buffer.byteLength(chunk, "utf8");
+      if (target === "stdout") {
+        const remaining = maxOutputBytes - stdoutBytes;
+        if (remaining <= 0) {
+          truncated = true;
+          return;
+        }
+        if (bytes <= remaining) {
+          stdout += chunk;
+          stdoutBytes += bytes;
+        } else {
+          stdout += Buffer.from(chunk, "utf8").subarray(0, remaining).toString("utf8");
+          stdoutBytes += remaining;
+          truncated = true;
+        }
+        return;
+      }
+      const remaining = maxOutputBytes - stderrBytes;
+      if (remaining <= 0) {
+        truncated = true;
+        return;
+      }
+      if (bytes <= remaining) {
+        stderr += chunk;
+        stderrBytes += bytes;
+      } else {
+        stderr += Buffer.from(chunk, "utf8").subarray(0, remaining).toString("utf8");
+        stderrBytes += remaining;
+        truncated = true;
+      }
+    };
+
+    child.stdout?.setEncoding("utf8");
+    child.stderr?.setEncoding("utf8");
+    child.stdout?.on("data", (chunk: string) => capAppend(chunk, "stdout"));
+    child.stderr?.on("data", (chunk: string) => capAppend(chunk, "stderr"));
+    child.on("error", reject);
+
+    const timer = setTimeout(() => {
+      timedOut = true;
+      child.kill("SIGKILL");
+    }, timeoutMs);
+
+    child.on("close", (code) => {
+      clearTimeout(timer);
+      resolve({
+        code,
+        stdout,
+        stderr,
+        timedOut,
+        truncated,
+        durationMs: Date.now() - started,
+      });
+    });
+  });
 }
 
 export async function runToolInContainer(

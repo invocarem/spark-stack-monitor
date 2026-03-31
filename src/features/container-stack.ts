@@ -1,8 +1,10 @@
 /**
  * Container tab: start/stop stack presets on the host (`docker run` / start / stop). Each preset mirrors
- * `containers/sglang/run-docker.sh` or `containers/sglang/run-docker-openai.sh`; the server uses a detached main process
+ * `containers/sglang/*.sh` or `containers/vllm/run-docker.sh`; the server uses a detached main process
  * for the Launch tab. Use the shell scripts directly for `-it … bash`.
  */
+
+import { type MonitorProvider, getMonitorProvider, onMonitorProviderChange, withProviderQuery } from "../app/provider";
 
 type StackPreset = {
   id: string;
@@ -22,8 +24,21 @@ const btnRun = document.querySelector<HTMLButtonElement>("#btn-stack-run");
 const btnStop = document.querySelector<HTMLButtonElement>("#btn-stack-stop");
 const btnRefresh = document.querySelector<HTMLButtonElement>("#btn-stack-refresh");
 const statusEl = document.querySelector<HTMLParagraphElement>("#status-stack");
+const containerScriptLabel = document.querySelector<HTMLElement>("#container-script-label");
+const containerLaunchScriptLabel = document.querySelector<HTMLElement>("#container-launch-script-label");
 
 let presets: StackPreset[] = [];
+
+function updateContainerCopy(provider: MonitorProvider): void {
+  if (containerScriptLabel) {
+    containerScriptLabel.textContent =
+      provider === "vllm" ? "containers/vllm/run-docker.sh" : "containers/sglang/run-docker*.sh";
+  }
+  if (containerLaunchScriptLabel) {
+    containerLaunchScriptLabel.textContent =
+      provider === "vllm" ? "scripts/vllm/*.sh" : "scripts/sglang/*.sh";
+  }
+}
 
 function stripSlashName(names: string): string {
   const n = names.trim().split(/\s+/)[0] ?? "";
@@ -88,7 +103,7 @@ async function selectDefaultPresetFromRunningContainer(): Promise<void> {
 async function loadPresets(): Promise<void> {
   if (!selPreset) return;
   try {
-    const res = await fetch("/api/stack/presets");
+    const res = await fetch(withProviderQuery("/api/stack/presets"));
     const body = (await res.json()) as { presets?: StackPreset[]; error?: string };
     if (!res.ok) {
       selPreset.innerHTML = "";
@@ -222,10 +237,18 @@ async function stopStack(): Promise<void> {
 }
 
 export function initContainerStack(): void {
+  updateContainerCopy(getMonitorProvider());
   selPreset?.addEventListener("change", () => void refreshStatus());
   btnRun?.addEventListener("click", () => void runStack());
   btnStop?.addEventListener("click", () => void stopStack());
   btnRefresh?.addEventListener("click", () => void refreshStatus());
+  onMonitorProviderChange(() => {
+    updateContainerCopy(getMonitorProvider());
+    void (async () => {
+      await loadPresets();
+      await refreshStatus();
+    })();
+  });
   void (async () => {
     await loadPresets();
     await refreshStatus();

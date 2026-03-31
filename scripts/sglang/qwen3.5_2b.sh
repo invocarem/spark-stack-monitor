@@ -1,15 +1,16 @@
 #!/bin/bash
 
 # Configuration variables
-MODEL="openai/gpt-oss-120b"
-SERVED_MODEL_NAME="gpt-oss-120b"
-CONTEXT_LENGTH=65536
+MODEL="Qwen/Qwen3.5-2B"
+SERVED_MODEL_NAME="qwen3.5-2b"
+CONTEXT_LENGTH=262144
 MEM_FRACTION_STATIC=0.8
 TENSOR_PARALLEL=1
 HOST="0.0.0.0"
 PORT=8000
 ATTENTION_BACKEND="triton"
-TOOL_CALL_PARSER="gpt-oss"
+FP8_GEMM_BACKEND="cutlass"
+TOOL_CALL_PARSER="qwen3_coder"
 
 # Launch the server with single device
 python3 -m sglang.launch_server \
@@ -22,5 +23,10 @@ python3 -m sglang.launch_server \
     --port ${PORT} \
     --enable-metrics \
     --attention-backend ${ATTENTION_BACKEND} \
+    --fp8-gemm-backend ${FP8_GEMM_BACKEND} \
     --tool-call-parser ${TOOL_CALL_PARSER} \
-    --reasoning-parser gpt-oss
+    --reasoning-parser qwen3 \
+    --speculative-algo NEXTN \
+    --speculative-num-steps 3 \
+    --speculative-eagle-topk 1 \
+    --speculative-num-draft-tokens 4

@@ -5,6 +5,9 @@ dist/
 .nimis/
 .monitor/
 
+*.log
+*.swp
+
 # Python
 __pycache__/
 *.py[cod]

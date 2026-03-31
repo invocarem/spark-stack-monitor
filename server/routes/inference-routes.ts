@@ -7,7 +7,13 @@ import {
   getSglangMetricsUrl,
   runSglangBenchmark,
 } from "../sglang.js";
-import { fetchVllmMetrics, getVllmBaseUrl, getVllmMetricsUrl } from "../vllm.js";
+import {
+  fetchVllmMetrics,
+  forwardVllmChatCompletions,
+  getVllmBaseUrl,
+  getVllmMetricsUrl,
+  runVllmBenchmark,
+} from "../vllm.js";
 
 type ProviderId = "sglang" | "vllm";
 
@@ -40,19 +46,16 @@ function buildConfig(provider: ProviderId) {
 }
 
 async function handleChatCompletions(c: Context, provider: ProviderId) {
-  if (provider === "vllm") {
-    return c.json(
-      { error: "vLLM chat route is not implemented in core monitor API yet.", provider },
-      501,
-    );
-  }
   let body: unknown;
   try {
     body = await c.req.json();
   } catch {
     return c.json({ error: "Invalid JSON body" }, 400);
   }
-  const result = await forwardChatCompletions(body);
+  const result =
+    provider === "vllm"
+      ? await forwardVllmChatCompletions(body)
+      : await forwardChatCompletions(body);
   if (!result.ok) {
     const status = (result.status ?? 502) as ContentfulStatusCode;
     const preview = result.bodyPreview;
@@ -72,19 +75,13 @@ async function handleChatCompletions(c: Context, provider: ProviderId) {
 }
 
 async function handleBenchmark(c: Context, provider: ProviderId) {
-  if (provider === "vllm") {
-    return c.json(
-      { error: "vLLM benchmark route is not implemented in core monitor API yet.", provider },
-      501,
-    );
-  }
   let body: unknown;
   try {
     body = await c.req.json();
   } catch {
     return c.json({ error: "Invalid JSON body" }, 400);
   }
-  const result = await runSglangBenchmark(body);
+  const result = provider === "vllm" ? await runVllmBenchmark(body) : await runSglangBenchmark(body);
   if (!result.ok) {
     const status = result.status as ContentfulStatusCode;
     return c.json({ error: result.error }, status);
@@ -100,7 +97,7 @@ async function handleMetrics(c: Context, provider: ProviderId) {
   return c.json({ ...result, provider });
 }
 
-export function registerSglangRoutes(app: Hono): void {
+export function registerInferenceRoutes(app: Hono): void {
   // Core routes.
   app.get("/api/config", (c) => {
     const provider = pickProvider(c);

@@ -59,8 +59,10 @@
             <h2>Container Control</h2>
             <p class="launch-lead container-lead">
               Starts/stops the stack container on the host. Presets mirror
-              <code>containers/sglang/run-docker*.sh</code> and run detached (<code>sleep infinity</code>) so the
-              <strong>Launch</strong> tab can execute <code>scripts/sglang/*.sh</code> inside it.
+              <code id="container-script-label">containers/sglang/run-docker*.sh</code> and run detached
+              (<code>sleep infinity</code>) so the
+              <strong>Launch</strong> tab can execute <code id="container-launch-script-label">scripts/sglang/*.sh</code>
+              inside it.
             </p>
             <details class="launch-more">
               <summary>Host env and paths</summary>
@@ -92,22 +94,24 @@
         <div id="panel-launch" role="tabpanel" aria-labelledby="tab-launch" class="tab-panel launch-panel hidden"
           data-panel="launch" hidden>
           <section class="panel panel-nested">
-            <h2>Launch SGLang (<code>launch_server</code>)</h2>
+            <h2 id="launch-title">Launch SGLang (<code>launch_server</code>)</h2>
             <p class="launch-lead">
-              After a stack container is running, pick it here and run a script from <code>./scripts/sglang</code>
-              to start the LLM with <code>python3 -m sglang.launch_server</code>. While the server is
+              After a stack container is running, pick it here and run a script from
+              <code id="launch-script-dir-label">./scripts/sglang</code>
+              to start the LLM with <code id="launch-cmd-label">python3 -m sglang.launch_server</code>. While the server is
               running, starting again is blocked. Script output while the model loads is on the
               <strong>Logs</strong> tab (launch script log).
             </p>
             <details class="launch-more">
               <summary>How it works</summary>
               <p>
-                Host repo <code>./scripts/sglang</code> is mounted at <code>/workspace/scripts/sglang</code>. The API
+                Host repo <code id="launch-host-dir-label">./scripts/sglang</code> is mounted at
+                <code id="launch-container-dir-label">/workspace/scripts/sglang</code>. The API
                 runs <code>docker exec -d …</code> with the script’s stdout/stderr appended to
-                <code>/workspace/.monitor/sglang-launch.log</code> (that output does not appear in
+                <code id="launch-log-path-label">/workspace/.monitor/sglang-launch.log</code> (that output does not appear in
                 <code>docker logs</code>, which is only the container’s main process). Open the
                 <strong>Logs</strong> tab to tail that file; <strong>Check launch server</strong> and
-                <strong>SGLang metrics</strong> show readiness.
+                <strong id="launch-metrics-label">SGLang metrics</strong> show readiness.
               </p>
             </details>
 
@@ -123,7 +127,7 @@
             </div>
             <div class="launch-args-editor">
               <p class="hint">
-                Launch args from script (<code>python3 -m sglang.launch_server</code>): edit values or uncheck to remove
+                Launch args from script (<code id="launch-args-cmd-label">python3 -m sglang.launch_server</code>): edit values or uncheck to remove
                 unsupported flags.
               </p>
               <div id="launch-args-empty" class="hint">Select a script to load args.</div>
@@ -137,7 +141,7 @@
                 </button>
                 <button type="button" id="btn-launch-check-server" class="btn">Check launch server</button>
                 <button type="button" id="btn-launch-stop-server" class="btn"
-                  title="Send SIGTERM, then SIGKILL if needed, to processes matching python3 -m sglang.launch_server">
+                  title="Send SIGTERM, then SIGKILL if needed, to matching launch processes.">
                   Stop launch server
                 </button>
               </div>
@@ -214,24 +218,54 @@
           hidden>
           <section class="panel panel-nested">
             <div class="row">
+              <label class="field">
+                <span>Mode</span>
+                <select id="sel-diagnostics-mode" aria-label="Tools mode">
+                  <option value="tools">Structured tools</option>
+                  <option value="diagnostics">Diagnostics shell</option>
+                </select>
+              </label>
               <div id="docker-container-field" class="field">
                 <label>
                   <span>Container</span>
                   <select id="sel-container" aria-label="Container"></select>
                 </label>
               </div>
-              <label class="field field-grow">
+              <label id="field-tool-select" class="field field-grow">
                 <span>Tool</span>
                 <select id="sel-tool" aria-label="Tool script"></select>
               </label>
+              <label id="field-diag-preset" class="field field-grow hidden">
+                <span>Preset</span>
+                <select id="sel-diag-preset" aria-label="Diagnostics preset"></select>
+              </label>
+              <label id="field-diag-timeout" class="field hidden">
+                <span>Timeout</span>
+                <select id="sel-diag-timeout" aria-label="Diagnostics timeout">
+                  <option value="5000">5 s</option>
+                  <option value="15000" selected>15 s</option>
+                  <option value="30000">30 s</option>
+                </select>
+              </label>
               <button type="button" id="btn-run" class="btn primary">Run</button>
             </div>
+            <label id="field-diag-command" class="field field-grow hidden">
+              <span>Command (<code>bash -lc</code> inside container)</span>
+              <input
+                type="text"
+                id="input-diag-command"
+                autocomplete="off"
+                placeholder="e.g. nvidia-smi"
+                aria-label="Diagnostics command"
+              />
+            </label>
             <p id="status-docker" class="status" aria-live="polite"></p>
           </section>
 
           <section class="panel panel-nested">
             <h2>Output</h2>
             <pre id="out" class="out">Choose a tool, then run it.</pre>
+            <pre id="out-meta" class="out out-short hidden">—</pre>
           </section>
         </div>
 

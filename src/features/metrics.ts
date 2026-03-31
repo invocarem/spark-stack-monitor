@@ -1,9 +1,9 @@
 /**
- * Metrics tab: `GET /api/metrics` (core API, backed by SGLang).
+ * Metrics tab: `GET /api/metrics` (core API, provider-aware).
  */
 
 import { fetchSglangConfig } from "../sglang/config";
-import { withProviderHeaders, withProviderQuery } from "../app/provider";
+import { getMonitorProvider, withProviderHeaders, withProviderQuery } from "../app/provider";
 
 type MetricsOk = {
   ok: true;
@@ -35,6 +35,14 @@ const chkMetricsRaw = document.querySelector<HTMLInputElement>("#chk-metrics-raw
 
 let metricsPollTimer: ReturnType<typeof setInterval> | null = null;
 let metricsLoadedOnce = false;
+
+function providerLabel(): string {
+  return getMonitorProvider() === "vllm" ? "vLLM" : "SGLang";
+}
+
+function providerKeyword(): string {
+  return getMonitorProvider() === "vllm" ? "vllm" : "sglang";
+}
 
 function setMetricsStatus(message: string, isError = false): void {
   if (!statusMetrics) return;
@@ -94,7 +102,7 @@ async function fetchMetricsDisplay(): Promise<void> {
         : `Error: ${err.error}\nURL: ${err.url}\nTime: ${err.fetchedAt}`;
       metricsRaw.textContent = "—";
       setMetricsStatus(
-        `${err.error} (see URL in config). Is SGLang running with --enable-metrics?`,
+        `${err.error} (see URL in config). Is ${providerLabel()} running with metrics enabled?`,
         true,
       );
       return;
@@ -105,7 +113,7 @@ async function fetchMetricsDisplay(): Promise<void> {
     metricsHighlights.textContent =
       lines.length > 0
         ? lines.join("\n")
-        : `(No lines containing "sglang" in /metrics — server responded but no matching series. Showing status only. HTTP ${ok.status}, ${ok.contentType ?? "unknown content-type"})`;
+        : `(No lines containing "${providerKeyword()}" in /metrics — server responded but no matching series. Showing status only. HTTP ${ok.status}, ${ok.contentType ?? "unknown content-type"})`;
 
     let rawText = ok.rawPreview;
     if (ok.rawTruncated) {

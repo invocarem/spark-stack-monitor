@@ -1,5 +1,5 @@
 /**
- * Repo launchers under `scripts/sglang/*.sh` (legacy) or `script/sglang/*.sh` (new).
+ * Repo launchers under `scripts/<provider>/*.sh`.
  * The same repo path is used inside the container at `/workspace/...` via bind mount.
  */
 
@@ -13,7 +13,12 @@ import {
 import { fetchInferenceModelIds } from "./sglang.js";
 import { findRepoRoot } from "./repo-root.js";
 
-const HOST_SGLANG_SCRIPT_DIR_CANDIDATES = ["scripts/sglang"] as const;
+export type LaunchProvider = "sglang" | "vllm";
+
+const HOST_SCRIPT_DIR_CANDIDATES: Record<LaunchProvider, readonly string[]> = {
+  sglang: ["scripts/sglang"],
+  vllm: ["scripts/vllm"],
+} as const;
 
 function isDir(p: string): boolean {
   try {
@@ -23,10 +28,10 @@ function isDir(p: string): boolean {
   }
 }
 
-function resolveLaunchScriptDirs(): { hostDir: string; containerDir: string } | null {
+function resolveLaunchScriptDirs(provider: LaunchProvider): { hostDir: string; containerDir: string } | null {
   const roots = [findRepoRoot(), process.cwd()];
   for (const root of roots) {
-    for (const rel of HOST_SGLANG_SCRIPT_DIR_CANDIDATES) {
+    for (const rel of HOST_SCRIPT_DIR_CANDIDATES[provider]) {
       const hostDir = path.join(root, rel);
       if (!isDir(hostDir)) continue;
       const containerDir = `/workspace/${rel}`;
@@ -37,13 +42,19 @@ function resolveLaunchScriptDirs(): { hostDir: string; containerDir: string } | 
 }
 
 /** Path inside the container (see repo README: bind mount at `/workspace`). */
-export const CONTAINER_SCRIPTS_DIR = "/workspace/scripts/sglang";
+export const CONTAINER_SCRIPTS_DIR: Record<LaunchProvider, string> = {
+  sglang: "/workspace/scripts/sglang",
+  vllm: "/workspace/scripts/vllm",
+} as const;
 
 /**
  * Launch stdout/stderr are appended here. `docker logs` only shows the container's
  * main process; `docker exec -d` does not feed that log, so we tee to a file for the UI/API.
  */
-export const LAUNCH_LOG_PATH = "/workspace/.monitor/sglang-launch.log";
+export const LAUNCH_LOG_PATH: Record<LaunchProvider, string> = {
+  sglang: "/workspace/.monitor/sglang-launch.log",
+  vllm: "/workspace/.monitor/vllm-launch.log",
+} as const;
 
 const DEFAULT_LAUNCH_LOG_TAIL_LINES = Math.min(
   Math.max(1, Number(process.env.MONITOR_LAUNCH_LOG_TAIL ?? "800")),
@@ -129,35 +140,57 @@ function parseLaunchArgsFromScriptText(scriptText: string): LaunchArgPair[] {
   const lines = scriptText.split(/\r?\n/);
   const out: LaunchArgPair[] = [];
   let inLaunch = false;
+  let launchText = "";
+
   for (const rawLine of lines) {
-    const line = rawLine.trim();
+    const trimmed = rawLine.trim();
     if (!inLaunch) {
-      if (/python3\s+-m\s+sglang\.launch_server\b/.test(line)) {
+      if (
+        /python3\s+-m\s+sglang\.launch_server\b/.test(trimmed) ||
+        /\bvllm\s+serve\b/.test(trimmed)
+      ) {
         inLaunch = true;
+      } else {
+        continue;
       }
-      continue;
     }
-    if (!line || line.startsWith("#")) {
-      continue;
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    launchText += `${rawLine.replace(/\\\s*$/, "").trim()} `;
+    if (!trimmed.endsWith("\\")) break;
+  }
+
+  const tokenRe =
+    /"([^"\\]*(?:\\.[^"\\]*)*)"|'([^'\\]*(?:\\.[^'\\]*)*)'|(\$\{[A-Za-z_][A-Za-z0-9_]*\}|\S+)/g;
+  const tokens: string[] = [];
+  for (const m of launchText.matchAll(tokenRe)) {
+    const quoted = m[1] ?? m[2] ?? m[3] ?? "";
+    if (quoted) tokens.push(quoted);
+  }
+  for (let i = 0; i < tokens.length; i += 1) {
+    const token = tokens[i] ?? "";
+    if (!token.startsWith("--")) continue;
+    const eqIdx = token.indexOf("=");
+    let key = token;
+    let rawValue = "";
+    if (eqIdx > 2) {
+      key = token.slice(0, eqIdx);
+      rawValue = token.slice(eqIdx + 1);
+    } else {
+      const next = tokens[i + 1] ?? "";
+      if (next && !next.startsWith("--")) {
+        rawValue = next;
+        i += 1;
+      }
     }
-    const noSlash = line.replace(/\\\s*$/, "").trim();
-    const m = noSlash.match(/^(--[A-Za-z0-9][A-Za-z0-9-]*)(?:\s+(.+))?$/);
-    if (!m) {
-      if (!line.endsWith("\\")) break;
-      continue;
-    }
-    const key = m[1] ?? "";
-    const rawValue = (m[2] ?? "").trim();
     const varRef = rawValue.match(/^\$\{([A-Za-z_][A-Za-z0-9_]*)\}$/);
     const value = varRef ? (vars.get(varRef[1] ?? "") ?? rawValue) : rawValue;
     out.push({ key, value, enabled: true });
-    if (!line.endsWith("\\")) break;
   }
   return out;
 }
 
-function readScriptMeta(scriptBasename: string): ScriptMeta {
-  const dirs = resolveLaunchScriptDirs();
+function readScriptMeta(provider: LaunchProvider, scriptBasename: string): ScriptMeta {
+  const dirs = resolveLaunchScriptDirs(provider);
   if (!dirs) return { launchArgs: [] };
   const fullPath = path.join(dirs.hostDir, scriptBasename);
   let text = "";
@@ -171,13 +204,13 @@ function readScriptMeta(scriptBasename: string): ScriptMeta {
   };
 }
 
-export function listLaunchScripts(): {
+export function listLaunchScripts(provider: LaunchProvider): {
   id: string;
   label: string;
   pathInContainer: string;
   launchArgs: LaunchArgPair[];
 }[] {
-  const dirs = resolveLaunchScriptDirs();
+  const dirs = resolveLaunchScriptDirs(provider);
   if (!dirs) return [];
   const scriptsDir = dirs.hostDir;
   let names: string[] = [];
@@ -191,13 +224,13 @@ export function listLaunchScripts(): {
     id,
     label: id,
     pathInContainer: `${dirs.containerDir}/${id}`,
-    launchArgs: readScriptMeta(id).launchArgs,
+    launchArgs: readScriptMeta(provider, id).launchArgs,
   }));
 }
 
-export function isAllowedLaunchScript(basename: string): boolean {
+export function isAllowedLaunchScript(provider: LaunchProvider, basename: string): boolean {
   if (!BASENAME_RE.test(basename)) return false;
-  return listLaunchScripts().some((s) => s.id === basename);
+  return listLaunchScripts(provider).some((s) => s.id === basename);
 }
 
 export type LaunchServerStatus =
@@ -215,13 +248,25 @@ function parseServedModelFromArgs(text: string): string | null {
  * Detect `python -m sglang.launch_server` via `pgrep -f sglang.launch_server` inside the container.
  * When running, tries (1) `ps` args for `--served-model-name`, then (2) `GET /v1/models` on the host inference URL.
  */
-export async function getLaunchServerStatus(container: string): Promise<LaunchServerStatus> {
+function providerProcessPattern(provider: LaunchProvider): string {
+  return provider === "vllm" ? "vllm serve" : "sglang.launch_server";
+}
+
+function providerName(provider: LaunchProvider): string {
+  return provider === "vllm" ? "vLLM" : "SGLang";
+}
+
+export async function getLaunchServerStatus(
+  provider: LaunchProvider,
+  container: string,
+): Promise<LaunchServerStatus> {
   try {
     assertSafeContainerName(container);
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Invalid container name" };
   }
-  const r = await dockerExec(container, ["pgrep", "-f", "sglang.launch_server"]);
+  const procPattern = providerProcessPattern(provider);
+  const r = await dockerExec(container, ["pgrep", "-f", procPattern]);
   if (r.code === 1) {
     return { ok: true, running: false, servedModel: null };
   }
@@ -234,13 +279,13 @@ export async function getLaunchServerStatus(container: string): Promise<LaunchSe
   let servedModel: string | null = null;
 
   const psCmd =
-    'pid=$(pgrep -f sglang.launch_server | head -1); [ -n "$pid" ] && ps -ww -p "$pid" -o args= 2>/dev/null || true';
+    `pid=$(pgrep -f '${procPattern}' | head -1); [ -n "$pid" ] && ps -ww -p "$pid" -o args= 2>/dev/null || true`;
   const ps = await dockerExec(container, ["sh", "-c", psCmd]);
   if (ps.code === 0 && ps.stdout.trim()) {
     servedModel = parseServedModelFromArgs(ps.stdout);
   }
 
-  if (servedModel === null) {
+  if (provider === "sglang" && servedModel === null) {
     const ids = await fetchInferenceModelIds();
     if (ids && ids.length > 0) {
       servedModel = ids[0] ?? null;
@@ -265,6 +310,7 @@ export type LaunchLogResult =
 
 /** Last lines of the launch log inside the container (for UI / API). */
 export async function getLaunchLogTail(
+  provider: LaunchProvider,
   container: string,
   tailLines: number = DEFAULT_LAUNCH_LOG_TAIL_LINES,
 ): Promise<LaunchLogResult> {
@@ -273,11 +319,12 @@ export async function getLaunchLogTail(
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Invalid container name" };
   }
+  const logPath = LAUNCH_LOG_PATH[provider];
   const r = await dockerExec(container, [
     "tail",
     "-n",
     String(Math.min(Math.max(1, Math.trunc(tailLines)), 10_000)),
-    LAUNCH_LOG_PATH,
+    logPath,
   ]);
   if (r.code !== 0) {
     const err = (r.stderr.trim() || r.stdout.trim()).slice(0, 200);
@@ -297,41 +344,50 @@ export async function getLaunchLogTail(
 }
 
 export async function runLaunchScriptInContainer(
+  provider: LaunchProvider,
   container: string,
   scriptBasename: string,
   argOverrides?: LaunchArgPair[],
 ): Promise<RunLaunchResult> {
   assertSafeContainerName(container);
-  if (!isAllowedLaunchScript(scriptBasename)) {
+  if (!isAllowedLaunchScript(provider, scriptBasename)) {
     return { ok: false, error: "Unknown or disallowed script" };
   }
 
-  const probe = await getLaunchServerStatus(container);
+  const probe = await getLaunchServerStatus(provider, container);
   if (!probe.ok) {
     return {
       ok: false,
-      error: `Could not check if SGLang is already running: ${probe.error}`,
+      error: `Could not check if ${providerName(provider)} is already running: ${probe.error}`,
     };
   }
   if (probe.running) {
     return {
       ok: false,
       conflict: true,
-      error:
-        "SGLang launch_server already appears to be running in this container (pgrep matched sglang.launch_server). Stop it first, or pick another container.",
+      error: `${providerName(provider)} server already appears to be running in this container. Stop it first, or pick another container.`,
     };
   }
 
-  const dirs = resolveLaunchScriptDirs();
+  const dirs = resolveLaunchScriptDirs(provider);
   if (!dirs) {
     return {
       ok: false,
-      error:
-        "No launch scripts directory found. Expected `scripts/sglang` or `script/sglang` under MONITOR_REPO_ROOT/current repo.",
+      error: `No launch scripts directory found for ${providerName(provider)}. Expected \`scripts/${provider}\` under MONITOR_REPO_ROOT/current repo.`,
     };
   }
   const inContainer = `${dirs.containerDir}/${scriptBasename}`;
-  const logPath = LAUNCH_LOG_PATH;
+  const scriptCheck = await dockerExec(container, ["sh", "-c", `test -f "${inContainer}"`]);
+  if (scriptCheck.code !== 0) {
+    return {
+      ok: false,
+      error:
+        `Launch script not found in container: ${inContainer}. ` +
+        "This usually means the container /workspace mount is not the repo root. " +
+        "Recreate the stack container so host repo root is mounted at /workspace.",
+    };
+  }
+  const logPath = LAUNCH_LOG_PATH[provider];
   if (
     argOverrides !== undefined &&
     !argOverrides.every(
@@ -397,20 +453,26 @@ export async function runLaunchScriptInContainer(
 }
 
 /** Kill processes matching `sglang.launch_server` (same pattern as `getLaunchServerStatus`). */
-const STOP_LAUNCH_SHELL = `p=$(pgrep -f sglang.launch_server||true); [ -z "$p" ]&&exit 0; kill -TERM $p 2>/dev/null; for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do q=$(pgrep -f sglang.launch_server||true); [ -z "$q" ]&&exit 0; sleep 1; done; p2=$(pgrep -f sglang.launch_server||true); [ -n "$p2" ]&&kill -KILL $p2 2>/dev/null; exit 0`;
+function stopLaunchShell(provider: LaunchProvider): string {
+  const procPattern = providerProcessPattern(provider);
+  return `p=$(pgrep -f '${procPattern}'||true); [ -z "$p" ]&&exit 0; kill -TERM $p 2>/dev/null; for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do q=$(pgrep -f '${procPattern}'||true); [ -z "$q" ]&&exit 0; sleep 1; done; p2=$(pgrep -f '${procPattern}'||true); [ -n "$p2" ]&&kill -KILL $p2 2>/dev/null; exit 0`;
+}
 
 export type StopLaunchResult =
   | { ok: true; wasRunning: boolean; message: string }
   | { ok: false; error: string; stderr?: string };
 
-export async function stopLaunchServerInContainer(container: string): Promise<StopLaunchResult> {
+export async function stopLaunchServerInContainer(
+  provider: LaunchProvider,
+  container: string,
+): Promise<StopLaunchResult> {
   try {
     assertSafeContainerName(container);
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Invalid container name" };
   }
 
-  const before = await getLaunchServerStatus(container);
+  const before = await getLaunchServerStatus(provider, container);
   if (!before.ok) {
     return { ok: false, error: before.error };
   }
@@ -418,11 +480,11 @@ export async function stopLaunchServerInContainer(container: string): Promise<St
     return {
       ok: true,
       wasRunning: false,
-      message: "SGLang launch_server is not running in this container.",
+      message: `${providerName(provider)} server is not running in this container.`,
     };
   }
 
-  const r = await dockerExec(container, ["sh", "-c", STOP_LAUNCH_SHELL]);
+  const r = await dockerExec(container, ["sh", "-c", stopLaunchShell(provider)]);
   if (r.code !== 0) {
     return {
       ok: false,
@@ -431,7 +493,7 @@ export async function stopLaunchServerInContainer(container: string): Promise<St
     };
   }
 
-  const after = await getLaunchServerStatus(container);
+  const after = await getLaunchServerStatus(provider, container);
   if (!after.ok) {
     return {
       ok: true,
@@ -450,6 +512,6 @@ export async function stopLaunchServerInContainer(container: string): Promise<St
   return {
     ok: true,
     wasRunning: true,
-    message: "Stopped SGLang launch_server in this container.",
+    message: `Stopped ${providerName(provider)} server in this container.`,
   };
 }

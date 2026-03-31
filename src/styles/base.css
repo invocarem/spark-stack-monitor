@@ -190,7 +190,10 @@ code {
   color: var(--muted);
 }
 
-select {
+select,
+input[type="text"],
+input[type="number"],
+textarea {
   font: inherit;
   color: var(--text);
   background: var(--bg);
@@ -285,6 +288,10 @@ select {
 .tab-panel.hidden,
 .out.hidden {
   display: none;
+}
+
+.hidden {
+  display: none !important;
 }
 
 .panel-nested {
