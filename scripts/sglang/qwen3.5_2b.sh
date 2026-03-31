@@ -29,4 +29,5 @@ python3 -m sglang.launch_server \
     --speculative-algo NEXTN \
     --speculative-num-steps 3 \
     --speculative-eagle-topk 1 \
-    --speculative-num-draft-tokens 4
+    --speculative-num-draft-tokens 4 \
+    --trust-remote-code
