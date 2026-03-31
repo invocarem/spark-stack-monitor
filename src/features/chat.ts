@@ -1,8 +1,9 @@
 /**
- * Side panel: OpenAI-compatible chat via `POST /api/sglang/chat/completions`.
+ * Side panel: OpenAI-compatible chat via `POST /api/chat/completions` (core API).
  */
 
 import { fetchSglangConfig } from "../sglang/config";
+import { withProviderHeaders, withProviderQuery } from "../app/provider";
 
 type ChatRole = "system" | "user" | "assistant";
 
@@ -76,9 +77,9 @@ async function send(): Promise<void> {
   setStatus("Sending…");
 
   try {
-    const res = await fetch("/api/sglang/chat/completions", {
+    const res = await fetch(withProviderQuery("/api/chat/completions"), {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: withProviderHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify({
         model,
         messages: history,

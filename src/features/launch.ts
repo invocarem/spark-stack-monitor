@@ -1,5 +1,5 @@
 /**
- * Launch tab: run repo `scripts/*.sh` inside the stack container via `docker exec` (detached).
+ * Launch tab: run repo `scripts/sglang/*.sh` inside the stack container via `docker exec` (detached).
  * Launch server detection: `GET /api/launch/status` (pgrep, then served model from ps /v1/models).
  */
 
@@ -258,16 +258,16 @@ async function loadScripts(): Promise<void> {
       opt.value = "";
       opt.textContent = body.error ?? "Failed to list scripts";
       selScript.appendChild(opt);
-      setScriptStatus(body.error ?? "Could not list scripts from ./scripts", true);
+      setScriptStatus(body.error ?? "Could not list scripts from ./scripts/sglang", true);
       return;
     }
     if (scripts.length === 0) {
       const opt = document.createElement("option");
       opt.value = "";
-      opt.textContent = "(no .sh files in ./scripts)";
+      opt.textContent = "(no .sh files in ./scripts/sglang)";
       selScript.appendChild(opt);
       setScriptStatus(
-        "No launch scripts found (repo ./scripts). Set MONITOR_REPO_ROOT if the API runs outside the repo.",
+        "No launch scripts found (repo ./scripts/sglang). Set MONITOR_REPO_ROOT if the API runs outside the repo.",
       );
       return;
     }
@@ -279,7 +279,7 @@ async function loadScripts(): Promise<void> {
       selScript.appendChild(opt);
     }
     renderLaunchArgs(selScript.value);
-    setScriptStatus(`Loaded ${scripts.length} script(s) from ./scripts.`);
+    setScriptStatus(`Loaded ${scripts.length} script(s) from ./scripts/sglang.`);
   } catch (e) {
     selScript.innerHTML = "";
     const opt = document.createElement("option");
@@ -317,7 +317,7 @@ async function loadContainers(): Promise<void> {
       setApplyModelButton(false);
       setServerStatusLine(
         "error",
-        "No running containers. Start the stack (e.g. ./run-docker.sh).",
+        "No running containers. Start the stack (e.g. ./containers/sglang/run-docker.sh).",
         null,
       );
       setScriptStatus("No running containers.", true);

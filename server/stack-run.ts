@@ -1,7 +1,7 @@
 /**
  * Whitelisted `docker run` presets for the stack dev container (host API).
- * Each preset mirrors the flags in repo `containers/run-docker.sh` and
- * `containers/run-docker-openai.sh` (GPU, shm, port, mounts, env, image, name).
+ * Each preset mirrors the flags in repo `containers/sglang/run-docker.sh` and
+ * `containers/sglang/run-docker-openai.sh` (GPU, shm, port, mounts, env, image, name).
  * The monitor uses `docker run -d` with `sleep infinity` instead of `-it … bash` so
  * the process works without a TTY and the Launch tab can `docker exec`.
  *
@@ -28,7 +28,7 @@ export const STACK_PRESETS: readonly StackPreset[] = [
   {
     id: "dgx_spark_tf5",
     label: "SciTrera DGX Spark SGLang (tf5)",
-    matchesScript: "containers/run-docker.sh",
+    matchesScript: "containers/sglang/run-docker.sh",
     containerName: "sglang_node_tf5",
     image: "scitrera/dgx-spark-sglang:0.5.9-t5",
     extraEnv: [],
@@ -36,7 +36,7 @@ export const STACK_PRESETS: readonly StackPreset[] = [
   {
     id: "lmsys_spark",
     label: "LM.Sys SGLang (spark)",
-    matchesScript: "containers/run-docker-openai.sh",
+    matchesScript: "containers/sglang/run-docker-openai.sh",
     containerName: "sglang_node",
     image: "lmsysorg/sglang:spark",
     extraEnv: ["TIKTOKEN_ENCODINGS_BASE=/tiktoken_encodings"],

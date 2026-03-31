@@ -1,5 +1,6 @@
 /**
- * Repo `scripts/*.sh` launchers (mounted at `/workspace/scripts` in the stack container).
+ * Repo launchers under `scripts/sglang/*.sh` (legacy) or `script/sglang/*.sh` (new).
+ * The same repo path is used inside the container at `/workspace/...` via bind mount.
  */
 
 import fs from "node:fs";
@@ -12,8 +13,31 @@ import {
 import { fetchInferenceModelIds } from "./sglang.js";
 import { findRepoRoot } from "./repo-root.js";
 
+const HOST_SGLANG_SCRIPT_DIR_CANDIDATES = ["scripts/sglang"] as const;
+
+function isDir(p: string): boolean {
+  try {
+    return fs.statSync(p).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+function resolveLaunchScriptDirs(): { hostDir: string; containerDir: string } | null {
+  const roots = [findRepoRoot(), process.cwd()];
+  for (const root of roots) {
+    for (const rel of HOST_SGLANG_SCRIPT_DIR_CANDIDATES) {
+      const hostDir = path.join(root, rel);
+      if (!isDir(hostDir)) continue;
+      const containerDir = `/workspace/${rel}`;
+      return { hostDir, containerDir };
+    }
+  }
+  return null;
+}
+
 /** Path inside the container (see repo README: bind mount at `/workspace`). */
-export const CONTAINER_SCRIPTS_DIR = "/workspace/scripts";
+export const CONTAINER_SCRIPTS_DIR = "/workspace/scripts/sglang";
 
 /**
  * Launch stdout/stderr are appended here. `docker logs` only shows the container's
@@ -133,8 +157,9 @@ function parseLaunchArgsFromScriptText(scriptText: string): LaunchArgPair[] {
 }
 
 function readScriptMeta(scriptBasename: string): ScriptMeta {
-  const scriptsDir = path.join(findRepoRoot(), "scripts");
-  const fullPath = path.join(scriptsDir, scriptBasename);
+  const dirs = resolveLaunchScriptDirs();
+  if (!dirs) return { launchArgs: [] };
+  const fullPath = path.join(dirs.hostDir, scriptBasename);
   let text = "";
   try {
     text = fs.readFileSync(fullPath, "utf8");
@@ -152,7 +177,9 @@ export function listLaunchScripts(): {
   pathInContainer: string;
   launchArgs: LaunchArgPair[];
 }[] {
-  const scriptsDir = path.join(findRepoRoot(), "scripts");
+  const dirs = resolveLaunchScriptDirs();
+  if (!dirs) return [];
+  const scriptsDir = dirs.hostDir;
   let names: string[] = [];
   try {
     names = fs.readdirSync(scriptsDir).filter((n) => n.endsWith(".sh") && BASENAME_RE.test(n));
@@ -163,7 +190,7 @@ export function listLaunchScripts(): {
   return names.map((id) => ({
     id,
     label: id,
-    pathInContainer: `${CONTAINER_SCRIPTS_DIR}/${id}`,
+    pathInContainer: `${dirs.containerDir}/${id}`,
     launchArgs: readScriptMeta(id).launchArgs,
   }));
 }
@@ -295,7 +322,15 @@ export async function runLaunchScriptInContainer(
     };
   }
 
-  const inContainer = `${CONTAINER_SCRIPTS_DIR}/${scriptBasename}`;
+  const dirs = resolveLaunchScriptDirs();
+  if (!dirs) {
+    return {
+      ok: false,
+      error:
+        "No launch scripts directory found. Expected `scripts/sglang` or `script/sglang` under MONITOR_REPO_ROOT/current repo.",
+    };
+  }
+  const inContainer = `${dirs.containerDir}/${scriptBasename}`;
   const logPath = LAUNCH_LOG_PATH;
   if (
     argOverrides !== undefined &&
@@ -311,8 +346,7 @@ export async function runLaunchScriptInContainer(
   ) {
     return { ok: false, error: "Invalid argOverrides format" };
   }
-  const scriptsDir = path.join(findRepoRoot(), "scripts");
-  const hostScriptPath = path.join(scriptsDir, scriptBasename);
+  const hostScriptPath = path.join(dirs.hostDir, scriptBasename);
   let overriddenScriptB64: string | null = null;
   if (argOverrides && argOverrides.length > 0) {
     let original = "";

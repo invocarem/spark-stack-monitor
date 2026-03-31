@@ -1,9 +1,11 @@
 /**
- * Load test: concurrent non-streaming chat completions via `POST /api/sglang/benchmark`.
+ * Load test: concurrent non-streaming chat completions via `POST /api/benchmark`.
  *
  * The HTTP response returns only after every scheduled request finishes (or times out server-side).
  * Console stays quiet until then — use Network → POST …/benchmark (pending).
  */
+
+import { withProviderHeaders, withProviderQuery } from "../app/provider";
 
 /** Max wait for the whole benchmark HTTP response (all completions on the server). */
 const BENCHMARK_FETCH_TIMEOUT_MS = 900_000;
@@ -131,9 +133,9 @@ async function runBenchmark(): Promise<void> {
     };
     if (max_tokens !== undefined) body.max_tokens = Math.floor(max_tokens);
 
-    const res = await fetch("/api/sglang/benchmark", {
+    const res = await fetch(withProviderQuery("/api/benchmark"), {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: withProviderHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify(body),
       signal: ac.signal,
     });

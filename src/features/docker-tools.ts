@@ -145,7 +145,7 @@ async function loadContainers(): Promise<void> {
       opt.textContent = "(no running containers)";
       sel.appendChild(opt);
       if (containerField) containerField.hidden = false;
-      setDockerStatus("No running containers. Start one with ./run-docker.sh");
+      setDockerStatus("No running containers. Start one with ./containers/sglang/run-docker.sh");
       return;
     }
     for (const row of rows) {

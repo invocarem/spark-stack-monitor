@@ -4,19 +4,19 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>SGLang Stack Monitor</title>
+  <title>Spark Stack Monitor</title>
   <link rel="stylesheet" href="/src/styles.css" />
 </head>
 
 <body>
   <div class="layout">
     <header class="header">
-      <h1>SGLang Stack Monitor</h1>
+      <h1>Spark Stack Monitor</h1>
       <details class="header-help">
         <summary>About this monitor</summary>
         <p class="lede">
           <strong>Container</strong> runs the stack image on the host (<code>docker run</code> / start /
-          stop). <strong>Launch</strong> runs <code>scripts/*.sh</code> inside that container to start
+          stop). <strong>Launch</strong> runs <code>scripts/sglang/*.sh</code> inside that container to start
           <code>sglang.launch_server</code>. Optional vLLM testing is a
           <a href="/vllm.html">separate page</a> (does not change presets here). Set the
           <strong>model id</strong> for Chat/Benchmark; other tabs: Logs, Tools, metrics, benchmark, chat.
@@ -43,9 +43,9 @@
             data-tab="docker">
             Tools
           </button>
-          <button type="button" role="tab" id="tab-sglang" aria-selected="false" aria-controls="panel-sglang"
-            data-tab="sglang">
-            SGLang metrics
+          <button type="button" role="tab" id="tab-metrics" aria-selected="false" aria-controls="panel-metrics"
+            data-tab="metrics">
+            Metrics
           </button>
           <button type="button" role="tab" id="tab-benchmark" aria-selected="false" aria-controls="panel-benchmark"
             data-tab="benchmark">
@@ -59,8 +59,8 @@
             <h2>Container Control</h2>
             <p class="launch-lead container-lead">
               Starts/stops the stack container on the host. Presets mirror
-              <code>containers/run-docker*.sh</code> and run detached (<code>sleep infinity</code>) so the
-              <strong>Launch</strong> tab can execute <code>scripts/*.sh</code> inside it.
+              <code>containers/sglang/run-docker*.sh</code> and run detached (<code>sleep infinity</code>) so the
+              <strong>Launch</strong> tab can execute <code>scripts/sglang/*.sh</code> inside it.
             </p>
             <details class="launch-more">
               <summary>Host env and paths</summary>
@@ -94,7 +94,7 @@
           <section class="panel panel-nested">
             <h2>Launch SGLang (<code>launch_server</code>)</h2>
             <p class="launch-lead">
-              After a stack container is running, pick it here and run a script from <code>./scripts</code>
+              After a stack container is running, pick it here and run a script from <code>./scripts/sglang</code>
               to start the LLM with <code>python3 -m sglang.launch_server</code>. While the server is
               running, starting again is blocked. Script output while the model loads is on the
               <strong>Logs</strong> tab (launch script log).
@@ -102,7 +102,7 @@
             <details class="launch-more">
               <summary>How it works</summary>
               <p>
-                Host repo <code>./scripts</code> is mounted at <code>/workspace/scripts</code>. The API
+                Host repo <code>./scripts/sglang</code> is mounted at <code>/workspace/scripts/sglang</code>. The API
                 runs <code>docker exec -d …</code> with the script’s stdout/stderr appended to
                 <code>/workspace/.monitor/sglang-launch.log</code> (that output does not appear in
                 <code>docker logs</code>, which is only the container’s main process). Open the
@@ -121,13 +121,14 @@
                 <select id="sel-launch-script" aria-label="Launch script"></select>
               </label>
             </div>
-          <div class="launch-args-editor">
-            <p class="hint">
-              Launch args from script (<code>python3 -m sglang.launch_server</code>): edit values or uncheck to remove unsupported flags.
-            </p>
-            <div id="launch-args-empty" class="hint">Select a script to load args.</div>
-            <div id="launch-args-list" class="launch-args-list" aria-live="polite"></div>
-          </div>
+            <div class="launch-args-editor">
+              <p class="hint">
+                Launch args from script (<code>python3 -m sglang.launch_server</code>): edit values or uncheck to remove
+                unsupported flags.
+              </p>
+              <div id="launch-args-empty" class="hint">Select a script to load args.</div>
+              <div id="launch-args-list" class="launch-args-list" aria-live="polite"></div>
+            </div>
 
             <div class="launch-toolbar">
               <div class="launch-toolbar__main">
@@ -234,15 +235,15 @@
           </section>
         </div>
 
-        <div id="panel-sglang" role="tabpanel" aria-labelledby="tab-sglang" class="tab-panel hidden" data-panel="sglang"
+        <div id="panel-metrics" role="tabpanel" aria-labelledby="tab-metrics" class="tab-panel hidden" data-panel="metrics"
           hidden>
           <section class="panel panel-nested">
-            <p id="sglang-config" class="config-line"></p>
+            <p id="metrics-config" class="config-line"></p>
             <div class="row">
-              <button type="button" id="btn-sglang-refresh" class="btn primary">Refresh metrics</button>
+              <button type="button" id="btn-metrics-refresh" class="btn primary">Refresh metrics</button>
               <label class="field">
                 <span>Auto-refresh</span>
-                <select id="sel-sglang-interval" aria-label="Auto-refresh interval">
+                <select id="sel-metrics-interval" aria-label="Auto-refresh interval">
                   <option value="0">Off</option>
                   <option value="3000">Every 3 s</option>
                   <option value="10000" selected>Every 10 s</option>
@@ -250,23 +251,23 @@
                 </select>
               </label>
             </div>
-            <p id="status-sglang" class="status" aria-live="polite"></p>
+            <p id="status-metrics" class="status" aria-live="polite"></p>
           </section>
 
           <section class="panel panel-nested">
             <h2>SGLang-related lines</h2>
             <p class="hint">Lines from <code>/metrics</code> whose text includes <code>sglang</code> (case-insensitive).
             </p>
-            <pre id="sglang-highlights" class="out out-short">Open this tab to load metrics.</pre>
+            <pre id="metrics-highlights" class="out out-short">Open this tab to load metrics.</pre>
           </section>
 
           <section class="panel panel-nested">
             <h2>Full metrics (preview)</h2>
             <label class="checkbox-row">
-              <input type="checkbox" id="chk-sglang-raw" />
+              <input type="checkbox" id="chk-metrics-raw" />
               <span>Show raw Prometheus text (may be large)</span>
             </label>
-            <pre id="sglang-raw" class="out hidden">—</pre>
+            <pre id="metrics-raw" class="out hidden">—</pre>
           </section>
         </div>
 
@@ -319,7 +320,7 @@
       <aside class="chat-aside" aria-label="Chat playground">
         <h2 class="chat-aside__title">Chat</h2>
         <p class="hint chat-aside__hint">
-          Uses <code>POST /api/sglang/chat/completions</code> → SGLang
+          Uses <code>POST /api/chat/completions</code> → SGLang
           <code>/v1/chat/completions</code>. Model matches the <strong>Launch</strong> tab (editable here too).
         </p>
         <label class="field field-chat-model">
@@ -340,6 +341,16 @@
         <p id="chat-status" class="status chat-status" aria-live="polite"></p>
       </aside>
     </div>
+    <footer class="footer-bar" aria-label="Monitor provider">
+      <label class="footer-provider">
+        <span>Provider</span>
+        <select id="sel-provider" aria-label="Active backend provider">
+          <option value="sglang">SGLang</option>
+          <option value="vllm">vLLM</option>
+        </select>
+      </label>
+      <span id="status-provider" class="footer-status" aria-live="polite"></span>
+    </footer>
   </div>
   <script type="module" src="/src/main.ts"></script>
 </body>

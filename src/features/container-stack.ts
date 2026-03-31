@@ -1,6 +1,6 @@
 /**
  * Container tab: start/stop stack presets on the host (`docker run` / start / stop). Each preset mirrors
- * `containers/run-docker.sh` or `containers/run-docker-openai.sh`; the server uses a detached main process
+ * `containers/sglang/run-docker.sh` or `containers/sglang/run-docker-openai.sh`; the server uses a detached main process
  * for the Launch tab. Use the shell scripts directly for `-it … bash`.
  */
 
