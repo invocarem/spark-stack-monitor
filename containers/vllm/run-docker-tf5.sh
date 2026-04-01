@@ -1,13 +1,12 @@
 docker run --gpus all \
-    --name sglang_node_tf5 \
-    --network host \
+    --name vllm_node_tf5 \
     --shm-size 32g \
     -p 8000:8000 \
-    -p 5000:5000 \
     -v ~/.cache/huggingface:/root/.cache/huggingface \
     -v $(pwd):/workspace \
     --env "HF_TOKEN=$HF_TOKEN" \
+    --network host \
     --ipc=host \
     -it --rm \
-    scitrera/dgx-spark-sglang:0.5.9-t5 \
+    vllm-node-tf5:latest \
     bash

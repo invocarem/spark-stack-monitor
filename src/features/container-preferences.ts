@@ -15,7 +15,10 @@ const PREFERRED_CONTAINERS: Record<MonitorProvider, readonly PreferredContainer[
     { name: "sglang_node_tf5", image: "scitrera/dgx-spark-sglang:0.5.9-t5" },
     { name: "sglang_node", image: "lmsysorg/sglang:spark" },
   ],
-  vllm: [{ name: "vllm_node_tf5", image: "vllm-node-tf5:latest" }],
+  vllm: [
+    { name: "vllm_node_tf5", image: "vllm-node-tf5:latest" },
+    { name: "vllm_node", image: "vllm-node:latest" },
+  ],
 };
 
 function firstContainerName(names: string): string {
