@@ -19,6 +19,9 @@ python3 -m sglang.launch_server \
     --context-length ${CONTEXT_LENGTH} \
     --mem-fraction-static ${MEM_FRACTION_STATIC} \
     --tp-size ${TENSOR_PARALLEL} \
+    --dist-init-addr 192.168.200.16:5000 \
+    --nnodes 2 \
+    --node-rank 0 \
     --host ${HOST} \
     --port ${PORT} \
     --enable-metrics \
