@@ -2,7 +2,7 @@ docker run --gpus all \
     --name sglang_node_tf5 \
     --network host \
     --shm-size 32g \
-    -p 8000:8000 \
+    -p 30000:30000 \
     -p 5000:5000 \
     -v ~/.cache/huggingface:/root/.cache/huggingface \
     -v $(pwd):/workspace \

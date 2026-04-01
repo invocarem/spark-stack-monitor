@@ -54,6 +54,16 @@ const launchContainerDirLabel = document.querySelector<HTMLElement>("#launch-con
 const launchLogPathLabel = document.querySelector<HTMLElement>("#launch-log-path-label");
 const launchMetricsLabel = document.querySelector<HTMLElement>("#launch-metrics-label");
 const launchArgsCmdLabel = document.querySelector<HTMLElement>("#launch-args-cmd-label");
+const launchClusterSection = document.querySelector<HTMLElement>("#launch-cluster-section");
+const chkLaunchCluster = document.querySelector<HTMLInputElement>("#chk-launch-cluster");
+const launchClusterNccl = document.querySelector<HTMLInputElement>("#launch-cluster-nccl");
+const launchClusterGloo = document.querySelector<HTMLInputElement>("#launch-cluster-gloo");
+const launchClusterMasterAddr = document.querySelector<HTMLInputElement>("#launch-cluster-master-addr");
+const launchClusterMasterPort = document.querySelector<HTMLInputElement>("#launch-cluster-master-port");
+const launchClusterDistInit = document.querySelector<HTMLInputElement>("#launch-cluster-dist-init");
+const launchClusterNnodes = document.querySelector<HTMLInputElement>("#launch-cluster-nnodes");
+const launchClusterNodeRank = document.querySelector<HTMLInputElement>("#launch-cluster-node-rank");
+const launchClusterFields = document.querySelector<HTMLElement>("#launch-cluster-fields");
 
 /** `true` = pgrep saw launch_server; `false` = not running; `null` = not checked or unknown */
 let lastServerRunning: boolean | null = null;
@@ -62,6 +72,12 @@ const scriptsById = new Map<string, LaunchScriptInfo>();
 
 function updateLaunchCopy(provider: MonitorProvider): void {
   const isVllm = provider === "vllm";
+  if (launchClusterSection) {
+    launchClusterSection.hidden = isVllm;
+  }
+  if (launchClusterFields) {
+    launchClusterFields.style.opacity = chkLaunchCluster?.checked ? "1" : "0.55";
+  }
   if (launchTitle) {
     launchTitle.innerHTML = isVllm
       ? "Launch vLLM (<code>serve</code>)"
@@ -173,6 +189,39 @@ function collectLaunchArgsOverrides(scriptId: string): LaunchArgPair[] {
     const enabled = row.querySelector<HTMLInputElement>(".launch-arg-enabled")?.checked ?? true;
     return { key, value, enabled };
   });
+}
+
+/** When cluster mode is on, merge dist / nnodes / node-rank from the cluster form into launch arg pairs. */
+function mergeClusterQuickOverrides(pairs: LaunchArgPair[]): LaunchArgPair[] {
+  if (!chkLaunchCluster?.checked) return pairs;
+  const distInit = launchClusterDistInit?.value?.trim() ?? "";
+  const nnodes = launchClusterNnodes?.value?.trim() ?? "";
+  const nodeRank = launchClusterNodeRank?.value?.trim() ?? "";
+  const out = pairs.map((p) => ({ ...p }));
+  const set = (key: string, value: string): void => {
+    if (!value) return;
+    const i = out.findIndex((p) => p.key === key);
+    if (i >= 0) out[i] = { ...out[i], value, enabled: true };
+    else out.push({ key, value, enabled: true });
+  };
+  set("--dist-init-addr", distInit);
+  set("--nnodes", nnodes);
+  set("--node-rank", nodeRank);
+  return out;
+}
+
+function buildClusterLaunchEnv(): Record<string, string> | undefined {
+  if (!chkLaunchCluster?.checked) return undefined;
+  const env: Record<string, string> = {};
+  const put = (name: string, el: HTMLInputElement | null): void => {
+    const v = el?.value?.trim() ?? "";
+    if (v) env[name] = v;
+  };
+  put("NCCL_SOCKET_IFNAME", launchClusterNccl);
+  put("GLOO_SOCKET_IFNAME", launchClusterGloo);
+  put("MASTER_ADDR", launchClusterMasterAddr);
+  put("MASTER_PORT", launchClusterMasterPort);
+  return Object.keys(env).length > 0 ? env : undefined;
 }
 
 function updateRunButtonState(): void {
@@ -434,7 +483,8 @@ async function runLaunchScript(): Promise<void> {
     setScriptStatus("Launch server already running—use Check launch server or stop the process first.", true);
     return;
   }
-  const argOverrides = collectLaunchArgsOverrides(script);
+  const argOverrides = mergeClusterQuickOverrides(collectLaunchArgsOverrides(script));
+  const launchEnv = buildClusterLaunchEnv();
 
   setScriptStatus(`Starting ${script} in ${container}…`);
   btnRun.disabled = true;
@@ -446,6 +496,7 @@ async function runLaunchScript(): Promise<void> {
         container,
         script,
         argOverrides,
+        ...(launchEnv ? { launchEnv } : {}),
       }),
     });
     const body = (await res.json()) as {
@@ -467,7 +518,10 @@ async function runLaunchScript(): Promise<void> {
       return;
     }
 
-    const overrideHint = argOverrides.length > 0 ? " Launch args override applied." : "";
+    const overrideHint =
+      argOverrides.length > 0 || launchEnv
+        ? " Launch args / cluster env applied."
+        : "";
     setScriptStatus(
       `${body.message ?? "Started."}${overrideHint} Use the Logs tab (launch script log) to watch output while the model loads.`,
     );
@@ -497,6 +551,11 @@ export function initLaunch(): void {
   btnCheck?.addEventListener("click", () => void refreshLaunchStatus());
   btnStopServer?.addEventListener("click", () => void stopLaunchServer());
   btnRun?.addEventListener("click", () => void runLaunchScript());
+  chkLaunchCluster?.addEventListener("change", () => {
+    if (launchClusterFields) {
+      launchClusterFields.style.opacity = chkLaunchCluster.checked ? "1" : "0.55";
+    }
+  });
   onMonitorProviderChange(() => {
     updateLaunchCopy(getMonitorProvider());
     lastServerRunning = null;

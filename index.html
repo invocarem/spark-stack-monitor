@@ -134,6 +134,50 @@
               <div id="launch-args-list" class="launch-args-list" aria-live="polite"></div>
             </div>
 
+            <details class="launch-more launch-cluster" id="launch-cluster-section" hidden>
+              <summary>Multi-node cluster (SGLang)</summary>
+              <p class="launch-cluster-lead">
+                Optional <code>export</code> lines (same as <code>docker exec</code> before
+                <code>launch_server</code>): use different <strong>NCCL / GLOO</strong> interfaces on each host.
+                Set <strong>node rank</strong> (and optionally dist / nnodes) here or only in the launch args
+                below. Run <strong>Run script</strong> on each node with its own container selected.
+              </p>
+              <label class="launch-cluster-enable">
+                <input type="checkbox" id="chk-launch-cluster" aria-label="Apply multi-node cluster options" />
+                <span>Apply options below (exports and/or rank / dist / nnodes)</span>
+              </label>
+              <div class="launch-cluster-fields" id="launch-cluster-fields">
+                <label class="field field-grow">
+                  <span><code>NCCL_SOCKET_IFNAME</code></span>
+                  <input type="text" id="launch-cluster-nccl" placeholder="e.g. enp1s0f1np1" autocomplete="off" />
+                </label>
+                <label class="field field-grow">
+                  <span><code>GLOO_SOCKET_IFNAME</code></span>
+                  <input type="text" id="launch-cluster-gloo" placeholder="e.g. enp1s0f1np1" autocomplete="off" />
+                </label>
+                <label class="field field-grow">
+                  <span><code>MASTER_ADDR</code></span>
+                  <input type="text" id="launch-cluster-master-addr" placeholder="e.g. 192.168.100.11" autocomplete="off" />
+                </label>
+                <label class="field field-grow">
+                  <span><code>MASTER_PORT</code></span>
+                  <input type="text" id="launch-cluster-master-port" placeholder="e.g. 50000" autocomplete="off" />
+                </label>
+                <label class="field field-grow">
+                  <span><code>--dist-init-addr</code> override</span>
+                  <input type="text" id="launch-cluster-dist-init" placeholder="host:port (optional)" autocomplete="off" />
+                </label>
+                <label class="field field-grow">
+                  <span><code>--nnodes</code> override</span>
+                  <input type="text" id="launch-cluster-nnodes" placeholder="optional" autocomplete="off" />
+                </label>
+                <label class="field field-grow">
+                  <span><code>--node-rank</code> override</span>
+                  <input type="text" id="launch-cluster-node-rank" placeholder="0 = head, 1+ = worker" autocomplete="off" />
+                </label>
+              </div>
+            </details>
+
             <div class="launch-toolbar">
               <div class="launch-toolbar__main">
                 <button type="button" id="btn-launch-refresh-containers" class="btn">

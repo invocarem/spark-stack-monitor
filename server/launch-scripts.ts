@@ -111,6 +111,43 @@ export type LaunchArgPair = {
   enabled: boolean;
 };
 
+/** Allowed names for optional `export` lines prepended before `bash script.sh` (multi-node NCCL / torch). */
+const LAUNCH_ENV_KEY_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+function shSingleQuoteForExport(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
+/**
+ * Validates env keys/values for `export` before launch. Values are single-quoted in the shell.
+ * Returns an error message or `null` if ok.
+ */
+export function validateLaunchEnv(env: Record<string, string>): string | null {
+  const entries = Object.entries(env).filter(([, v]) => v.length > 0);
+  if (entries.length === 0) return "Expected at least one non-empty variable";
+  for (const [k, v] of entries) {
+    if (!LAUNCH_ENV_KEY_RE.test(k)) {
+      return `Invalid environment variable name: ${k}`;
+    }
+    if (v.length > 1024) {
+      return `Value for ${k} is too long (max 1024 characters)`;
+    }
+    if (!/^[\x20-\x7e]*$/.test(v)) {
+      return `Value for ${k} must be printable ASCII (no newlines)`;
+    }
+  }
+  return null;
+}
+
+export function formatLaunchEnvPrefix(env: Record<string, string>): string {
+  const parts: string[] = [];
+  for (const [k, v] of Object.entries(env)) {
+    if (!v.length) continue;
+    parts.push(`export ${k}=${shSingleQuoteForExport(v)}`);
+  }
+  return parts.join(" && ");
+}
+
 type ScriptMeta = {
   launchArgs: LaunchArgPair[];
 };
@@ -348,6 +385,7 @@ export async function runLaunchScriptInContainer(
   container: string,
   scriptBasename: string,
   argOverrides?: LaunchArgPair[],
+  launchEnv?: Record<string, string>,
 ): Promise<RunLaunchResult> {
   assertSafeContainerName(container);
   if (!isAllowedLaunchScript(provider, scriptBasename)) {
@@ -402,6 +440,22 @@ export async function runLaunchScriptInContainer(
   ) {
     return { ok: false, error: "Invalid argOverrides format" };
   }
+  let envPrefix = "";
+  if (launchEnv !== undefined && Object.keys(launchEnv).length > 0) {
+    const filtered: Record<string, string> = {};
+    for (const [k, v] of Object.entries(launchEnv)) {
+      if (typeof k === "string" && typeof v === "string" && v.trim().length > 0) {
+        filtered[k.trim()] = v.trim();
+      }
+    }
+    if (Object.keys(filtered).length > 0) {
+      const err = validateLaunchEnv(filtered);
+      if (err) {
+        return { ok: false, error: err };
+      }
+      envPrefix = `${formatLaunchEnvPrefix(filtered)} && `;
+    }
+  }
   const hostScriptPath = path.join(dirs.hostDir, scriptBasename);
   let overriddenScriptB64: string | null = null;
   if (argOverrides && argOverrides.length > 0) {
@@ -437,7 +491,7 @@ export async function runLaunchScriptInContainer(
   const runScript =
     `(command -v script >/dev/null 2>&1 && script -qefc '${launchCommand}' - || sh -c '${launchCommand}') >> ${logPath} 2>&1`;
   const shellCmd = [
-    "mkdir -p /workspace/.monitor",
+    `${envPrefix}mkdir -p /workspace/.monitor`,
     `printf '%s\\n' "---- $(date -u +%Y-%m-%dT%H:%M:%SZ) starting ${scriptBasename} ----" >> ${logPath}`,
     runScript,
   ].join(" && ");

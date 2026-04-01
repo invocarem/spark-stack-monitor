@@ -316,6 +316,19 @@ export function registerCoreRoutes(app: Hono): void {
           enabled: x.enabled === false ? false : true,
         }))
       : undefined;
+    let launchEnv: Record<string, string> | undefined;
+    if (o.launchEnv !== undefined && o.launchEnv !== null) {
+      if (typeof o.launchEnv !== "object" || Array.isArray(o.launchEnv)) {
+        return c.json({ error: "launchEnv must be a JSON object of string values" }, 400);
+      }
+      launchEnv = {};
+      for (const [k, v] of Object.entries(o.launchEnv as Record<string, unknown>)) {
+        if (typeof v !== "string") {
+          return c.json({ error: `launchEnv.${k} must be a string` }, 400);
+        }
+        launchEnv[k] = v;
+      }
+    }
     if (!container) {
       return c.json({ error: "Missing container" }, 400);
     }
@@ -327,6 +340,7 @@ export function registerCoreRoutes(app: Hono): void {
       container,
       script,
       argOverrides,
+      launchEnv,
     );
     if (!result.ok) {
       const code = result.conflict ? 409 : 400;
