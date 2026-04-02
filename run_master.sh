@@ -30,4 +30,5 @@ docker run --gpus all \
         --dist-init-addr 192.168.100.11:50000 \
         --host 0.0.0.0 \
         --port 30000 \
+        --attention-backend triton \
         --trust-remote-code

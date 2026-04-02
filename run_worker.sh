@@ -25,4 +25,5 @@ docker run --gpus all \
         --nnodes 2 \
         --node-rank 1 \
         --dist-init-addr 192.168.100.11:50000 \
+        --attention-backend triton \
         --trust-remote-code
