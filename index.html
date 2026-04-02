@@ -68,9 +68,10 @@
               <summary>Host env and paths</summary>
               <p>
                 API runs on host Docker. Optional <code>HF_TOKEN</code> is passed through. Mount root is
-                <code>MONITOR_REPO_ROOT</code> (or auto-detected). Host port
-                <code>MONITOR_STACK_HOST_PORT</code> (default <code>8000</code>) maps to container
-                <code>8000</code>.
+                <code>MONITOR_REPO_ROOT</code> (or auto-detected). SGLang presets publish
+                <code>MONITOR_STACK_HOST_PORT</code> (default <code>30000</code>) to container port
+                <code>30000</code> (same as <code>scripts/sglang/*.sh</code>). vLLM presets default
+                <code>8000→8000</code>.
               </p>
             </details>
             <div class="launch-fields container-fields">

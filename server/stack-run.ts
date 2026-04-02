@@ -70,7 +70,15 @@ const PRESET_BY_ID = new Map(STACK_PRESETS.map((p) => [p.id, p]));
 
 const ALLOWED_NAMES = new Set(STACK_PRESETS.map((p) => p.containerName));
 
-function hostPort(): string {
+/** Published host port for SGLang stack presets (maps to container :30000; matches `scripts/sglang/*.sh`). */
+function sglangStackHostPort(): string {
+  const n = Number(process.env.MONITOR_STACK_HOST_PORT ?? "30000");
+  if (!Number.isFinite(n) || n < 1 || n > 65535) return "30000";
+  return String(Math.trunc(n));
+}
+
+/** Published host port for vLLM stack presets (maps to container :8000). */
+function vllmStackHostPort(): string {
   const n = Number(process.env.MONITOR_STACK_HOST_PORT ?? "8000");
   if (!Number.isFinite(n) || n < 1 || n > 65535) return "8000";
   return String(Math.trunc(n));
@@ -142,8 +150,10 @@ export async function runStackPreset(presetId: string): Promise<RunStackResult> 
 
   const repoRoot = findRepoRoot();
   const hfCache = path.join(os.homedir(), ".cache", "huggingface");
-  const port = hostPort();
   const shm = shmSize();
+  const hostPublish =
+    preset.provider === "vllm" ? vllmStackHostPort() : sglangStackHostPort();
+  const containerPublish = preset.provider === "vllm" ? "8000" : "30000";
 
   const args: string[] = [
     "run",
@@ -155,7 +165,7 @@ export async function runStackPreset(presetId: string): Promise<RunStackResult> 
     "--shm-size",
     shm,
     "-p",
-    `${port}:8000`,
+    `${hostPublish}:${containerPublish}`,
     "-v",
     `${hfCache}:/root/.cache/huggingface`,
     "-v",
@@ -186,7 +196,7 @@ export async function runStackPreset(presetId: string): Promise<RunStackResult> 
     ok: true,
     container: preset.containerName,
     started: true,
-    message: `Created and started ${preset.containerName} (same flags as ${preset.matchesScript}; monitor uses sleep infinity). Host port ${port}→8000; repo at /workspace.`,
+    message: `Created and started ${preset.containerName} (same flags as ${preset.matchesScript}; monitor uses sleep infinity). Host port ${hostPublish}→${containerPublish}; repo at /workspace.`,
   };
 }
 

@@ -7,10 +7,8 @@ SERVED_MODEL_NAME="qwen3.5-2b"
 python3 -m sglang.launch_server \
   --model-path ${MODEL} \
   --served-model-name ${SERVED_MODEL_NAME} \
-  --tp 2 \
-  --nnodes 2 \
-  --node-rank 0 \
-  --dist-init-addr 192.168.100.11:50000 \
   --host 0.0.0.0 \
   --port 30000 \
   --trust-remote-code \
+  --enable-metrics \
+  --attention-backend triton 

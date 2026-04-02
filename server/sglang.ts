@@ -2,7 +2,7 @@
 
 import { assistantFromCompletionBody } from "../lib/openai-completion-text.js";
 
-const DEFAULT_BASE = process.env.SGLANG_BASE_URL ?? "http://127.0.0.1:8000";
+const DEFAULT_BASE = process.env.SGLANG_BASE_URL ?? "http://127.0.0.1:30000";
 const METRICS_PATH = process.env.SGLANG_METRICS_PATH ?? "/metrics";
 const FETCH_TIMEOUT_MS = Number(process.env.SGLANG_FETCH_TIMEOUT_MS ?? "8000");
 const MAX_RAW_CHARS = 256_000;
@@ -121,7 +121,15 @@ export async function forwardChatCompletions(
     };
   }
 
-  const url = new URL("/v1/chat/completions", `${getSglangBaseUrl()}/`);
+  let base: string;
+  try {
+    base = getSglangBaseUrl();
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return { ok: false, error: msg, status: 400 };
+  }
+
+  const url = new URL("/v1/chat/completions", `${base}/`);
   const payload = {
     model: body.model.trim(),
     messages: body.messages,
@@ -208,8 +216,19 @@ function extractSglangLines(text: string): string[] {
 }
 
 export async function fetchSglangMetrics(): Promise<SglangMetricsResult> {
-  const url = getSglangMetricsUrl();
   const fetchedAt = new Date().toISOString();
+  let url: string;
+  try {
+    url = getSglangMetricsUrl();
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return {
+      ok: false,
+      url: "(could not resolve SGLANG_METRICS_URL / SGLANG_BASE_URL)",
+      error: msg,
+      fetchedAt,
+    };
+  }
   try {
     const ac = new AbortController();
     const timer = setTimeout(() => ac.abort(), FETCH_TIMEOUT_MS);
@@ -347,8 +366,16 @@ export async function runSglangBenchmark(
   const message = body.message.trim();
   const max_tokens = body.max_tokens;
 
+  let benchmarkBase: string;
+  try {
+    benchmarkBase = getSglangBaseUrl();
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return { ok: false, status: 400, error: msg };
+  }
+
   console.log(
-    `[benchmark] start model=${JSON.stringify(model)} requests=${requests} concurrency=${concurrency} max_tokens=${max_tokens ?? "default"} → ${getSglangBaseUrl()}`,
+    `[benchmark] start model=${JSON.stringify(model)} requests=${requests} concurrency=${concurrency} max_tokens=${max_tokens ?? "default"} → ${benchmarkBase}`,
   );
 
   const latenciesMs: number[] = [];

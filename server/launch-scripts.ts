@@ -473,6 +473,10 @@ export async function runLaunchScriptInContainer(
       const key = m[2] ?? "";
       const ov = byKey.get(key);
       if (!ov) return [rawLine];
+      // Dashboard metrics need Prometheus on the inference port; do not strip this flag.
+      if (!ov.enabled && provider === "sglang" && key === "--enable-metrics") {
+        return [rawLine];
+      }
       if (!ov.enabled) return [];
       const indent = m[1] ?? "";
       const hasSlash = rawLine.trimEnd().endsWith("\\");

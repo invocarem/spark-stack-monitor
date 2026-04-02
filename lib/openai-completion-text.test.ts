@@ -47,6 +47,21 @@ describe("assistantFromCompletionBody", () => {
     expect(assistantFromCompletionBody(body)).toBe("think step");
   });
 
+  it("uses reasoning_content when message.content is empty string (Qwen3 + SGLang)", () => {
+    const body = {
+      choices: [
+        {
+          message: {
+            role: "assistant",
+            content: "",
+            reasoning_content: "Hello, world!",
+          },
+        },
+      ],
+    };
+    expect(assistantFromCompletionBody(body)).toBe("Hello, world!");
+  });
+
   it("uses multipart content arrays", () => {
     const body = {
       choices: [

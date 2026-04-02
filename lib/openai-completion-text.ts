@@ -45,11 +45,15 @@ export function assistantFromCompletionBody(data: unknown): string | null {
   if (typeof msg === "object" && msg !== null) {
     const m = msg as Record<string, unknown>;
     const fromContent = normalizeChatContent(m.content);
-    if (fromContent !== null) return fromContent;
-    if (typeof m.reasoning_content === "string" && m.reasoning_content.length > 0) {
+    // Treat empty string like missing: Qwen3 / SGLang often put the reply in
+    // `reasoning_content` and leave `content` as "".
+    if (fromContent !== null && fromContent.trim().length > 0) {
+      return fromContent;
+    }
+    if (typeof m.reasoning_content === "string" && m.reasoning_content.trim().length > 0) {
       return m.reasoning_content;
     }
-    if (typeof m.reasoning === "string" && m.reasoning.length > 0) return m.reasoning;
+    if (typeof m.reasoning === "string" && m.reasoning.trim().length > 0) return m.reasoning;
   }
   return null;
 }
