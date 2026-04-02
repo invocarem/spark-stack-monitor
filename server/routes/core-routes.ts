@@ -17,6 +17,7 @@ import {
   runLaunchScriptInContainer,
   stopLaunchServerInContainer,
 } from "../launch-scripts.js";
+import { getLaunchClusterDefaultsFromEnv } from "../launch-cluster-defaults.js";
 import { listStackPresets, runStackPreset, stopStackContainer } from "../stack-run.js";
 
 type ProviderId = "sglang" | "vllm";
@@ -257,6 +258,19 @@ export function registerCoreRoutes(app: Hono): void {
       const message = e instanceof Error ? e.message : String(e);
       return c.json({ error: message, scripts: [] }, 500);
     }
+  });
+
+  app.get("/api/launch/cluster-defaults", (c) => {
+    if (launchProvider(c) !== "sglang") {
+      return c.json({
+        launchEnv: {},
+        distInit: "",
+        nnodes: "",
+        nodeRank: "",
+        applyCluster: false,
+      });
+    }
+    return c.json(getLaunchClusterDefaultsFromEnv());
   });
 
   app.get("/api/launch/status", async (c) => {

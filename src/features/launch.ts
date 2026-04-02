@@ -210,6 +210,44 @@ function mergeClusterQuickOverrides(pairs: LaunchArgPair[]): LaunchArgPair[] {
   return out;
 }
 
+async function applyClusterDefaultsFromEnvFile(): Promise<void> {
+  if (getMonitorProvider() !== "sglang") return;
+  try {
+    const res = await fetch(withProviderQuery("/api/launch/cluster-defaults"));
+    const body = (await res.json()) as {
+      launchEnv?: Record<string, string>;
+      distInit?: string;
+      nnodes?: string;
+      nodeRank?: string;
+      applyCluster?: boolean;
+    };
+    if (!res.ok) return;
+
+    const setIfEmpty = (el: HTMLInputElement | null, value: string | undefined): void => {
+      if (!el || !(value && value.trim())) return;
+      if (!el.value.trim()) el.value = value.trim();
+    };
+
+    const le = body.launchEnv ?? {};
+    setIfEmpty(launchClusterNccl, le.NCCL_SOCKET_IFNAME);
+    setIfEmpty(launchClusterGloo, le.GLOO_SOCKET_IFNAME);
+    setIfEmpty(launchClusterMasterAddr, le.MASTER_ADDR);
+    setIfEmpty(launchClusterMasterPort, le.MASTER_PORT);
+    setIfEmpty(launchClusterDistInit, body.distInit);
+    setIfEmpty(launchClusterNnodes, body.nnodes);
+    setIfEmpty(launchClusterNodeRank, body.nodeRank);
+
+    if (chkLaunchCluster && body.applyCluster === true) {
+      chkLaunchCluster.checked = true;
+      if (launchClusterFields) {
+        launchClusterFields.style.opacity = "1";
+      }
+    }
+  } catch {
+    /* optional: dev server down or old API */
+  }
+}
+
 function buildClusterLaunchEnv(): Record<string, string> | undefined {
   if (!chkLaunchCluster?.checked) return undefined;
   const env: Record<string, string> = {};
@@ -562,11 +600,13 @@ export function initLaunch(): void {
     lastServedModel = null;
     setApplyModelButton(false);
     void (async () => {
+      await applyClusterDefaultsFromEnvFile();
       await loadScripts();
       await loadContainers();
     })();
   });
   void (async () => {
+    await applyClusterDefaultsFromEnvFile();
     await loadScripts();
     await loadContainers();
   })();

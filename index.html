@@ -141,6 +141,9 @@
                 <code>launch_server</code>): use different <strong>NCCL / GLOO</strong> interfaces on each host.
                 Set <strong>node rank</strong> (and optionally dist / nnodes) here or only in the launch args
                 below. Run <strong>Run script</strong> on each node with its own container selected.
+                With <code>npm run dev</code>, put defaults in repo <code>.env</code>
+                (see <code>.env.example</code>, or <code>.env.example.head</code> / <code>.env.example.worker</code>);
+                the API loads them and prefills this section.
               </p>
               <label class="launch-cluster-enable">
                 <input type="checkbox" id="chk-launch-cluster" aria-label="Apply multi-node cluster options" />
