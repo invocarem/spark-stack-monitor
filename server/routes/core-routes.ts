@@ -268,6 +268,7 @@ export function registerCoreRoutes(app: Hono): void {
         nnodes: "",
         nodeRank: "",
         applyCluster: false,
+        monitorClusterApplySetInEnv: false,
       });
     }
     return c.json(getLaunchClusterDefaultsFromEnv());

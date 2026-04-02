@@ -10,6 +10,11 @@ import {
   onMonitorProviderChange,
   withProviderQuery,
 } from "../app/provider";
+import {
+  getStoredStackLaunchMode,
+  setStoredStackLaunchMode,
+  STACK_LAUNCH_MODE_EVENT,
+} from "../app/stack-launch-mode";
 import { getPreferredModel, setPreferredModel } from "../sglang/model-prefs";
 import { pickPreferredContainer } from "./container-preferences";
 
@@ -210,8 +215,14 @@ function mergeClusterQuickOverrides(pairs: LaunchArgPair[]): LaunchArgPair[] {
   return out;
 }
 
+/** When true, `MONITOR_CLUSTER_APPLY` is set in `.env` — Launch follows API only; ignore localStorage for cluster checkbox. */
+let clusterDefaultsDeferToEnvOnly = false;
+
 async function applyClusterDefaultsFromEnvFile(): Promise<void> {
-  if (getMonitorProvider() !== "sglang") return;
+  if (getMonitorProvider() !== "sglang") {
+    clusterDefaultsDeferToEnvOnly = false;
+    return;
+  }
   try {
     const res = await fetch(withProviderQuery("/api/launch/cluster-defaults"));
     const body = (await res.json()) as {
@@ -220,8 +231,11 @@ async function applyClusterDefaultsFromEnvFile(): Promise<void> {
       nnodes?: string;
       nodeRank?: string;
       applyCluster?: boolean;
+      monitorClusterApplySetInEnv?: boolean;
     };
     if (!res.ok) return;
+
+    clusterDefaultsDeferToEnvOnly = body.monitorClusterApplySetInEnv === true;
 
     const setIfEmpty = (el: HTMLInputElement | null, value: string | undefined): void => {
       if (!el || !(value && value.trim())) return;
@@ -237,14 +251,32 @@ async function applyClusterDefaultsFromEnvFile(): Promise<void> {
     setIfEmpty(launchClusterNnodes, body.nnodes);
     setIfEmpty(launchClusterNodeRank, body.nodeRank);
 
-    if (chkLaunchCluster && body.applyCluster === true) {
-      chkLaunchCluster.checked = true;
-      if (launchClusterFields) {
-        launchClusterFields.style.opacity = "1";
+    if (chkLaunchCluster) {
+      if (clusterDefaultsDeferToEnvOnly) {
+        chkLaunchCluster.checked = body.applyCluster === true;
+        if (launchClusterFields) {
+          launchClusterFields.style.opacity = chkLaunchCluster.checked ? "1" : "0.55";
+        }
+      } else if (body.applyCluster === true) {
+        chkLaunchCluster.checked = true;
+        if (launchClusterFields) {
+          launchClusterFields.style.opacity = "1";
+        }
       }
     }
   } catch {
     /* optional: dev server down or old API */
+  }
+}
+
+/** Apply Container tab / localStorage preference over cluster checkbox (SGLang only). */
+function applyStoredStackLaunchModeToClusterUI(): void {
+  if (getMonitorProvider() !== "sglang" || !chkLaunchCluster || clusterDefaultsDeferToEnvOnly) return;
+  const m = getStoredStackLaunchMode();
+  if (m === null) return;
+  chkLaunchCluster.checked = m === "cluster";
+  if (launchClusterFields) {
+    launchClusterFields.style.opacity = chkLaunchCluster.checked ? "1" : "0.55";
   }
 }
 
@@ -593,6 +625,9 @@ export function initLaunch(): void {
     if (launchClusterFields) {
       launchClusterFields.style.opacity = chkLaunchCluster.checked ? "1" : "0.55";
     }
+    if (getMonitorProvider() === "sglang" && chkLaunchCluster && !clusterDefaultsDeferToEnvOnly) {
+      setStoredStackLaunchMode(chkLaunchCluster.checked ? "cluster" : "single");
+    }
   });
   onMonitorProviderChange(() => {
     updateLaunchCopy(getMonitorProvider());
@@ -601,12 +636,17 @@ export function initLaunch(): void {
     setApplyModelButton(false);
     void (async () => {
       await applyClusterDefaultsFromEnvFile();
+      applyStoredStackLaunchModeToClusterUI();
       await loadScripts();
       await loadContainers();
     })();
   });
+  window.addEventListener(STACK_LAUNCH_MODE_EVENT, () => {
+    applyStoredStackLaunchModeToClusterUI();
+  });
   void (async () => {
     await applyClusterDefaultsFromEnvFile();
+    applyStoredStackLaunchModeToClusterUI();
     await loadScripts();
     await loadContainers();
   })();

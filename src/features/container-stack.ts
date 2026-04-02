@@ -5,6 +5,12 @@
  */
 
 import { type MonitorProvider, getMonitorProvider, onMonitorProviderChange, withProviderQuery } from "../app/provider";
+import {
+  getStoredStackLaunchMode,
+  setStoredStackLaunchMode,
+  STACK_LAUNCH_MODE_EVENT,
+  type StackLaunchMode,
+} from "../app/stack-launch-mode";
 
 type StackPreset = {
   id: string;
@@ -26,8 +32,71 @@ const btnRefresh = document.querySelector<HTMLButtonElement>("#btn-stack-refresh
 const statusEl = document.querySelector<HTMLParagraphElement>("#status-stack");
 const containerScriptLabel = document.querySelector<HTMLElement>("#container-script-label");
 const containerLaunchScriptLabel = document.querySelector<HTMLElement>("#container-launch-script-label");
+const stackModeWrap = document.querySelector<HTMLElement>("#container-stack-mode-wrap");
+const radioStackModeSingle = document.querySelector<HTMLInputElement>("#radio-stack-mode-single");
+const radioStackModeCluster = document.querySelector<HTMLInputElement>("#radio-stack-mode-cluster");
 
 let presets: StackPreset[] = [];
+
+function setStackModeRadios(mode: StackLaunchMode): void {
+  if (!radioStackModeSingle || !radioStackModeCluster) return;
+  if (mode === "single") {
+    radioStackModeSingle.checked = true;
+  } else {
+    radioStackModeCluster.checked = true;
+  }
+}
+
+/** When localStorage is unset, infer from API defaults (matches Launch tab first load). */
+async function syncStackModeRadiosFromServerAndStorage(): Promise<void> {
+  if (getMonitorProvider() !== "sglang" || !stackModeWrap) return;
+  try {
+    const res = await fetch(withProviderQuery("/api/launch/cluster-defaults"));
+    const body = (await res.json()) as {
+      applyCluster?: boolean;
+      monitorClusterApplySetInEnv?: boolean;
+    };
+    if (!res.ok) {
+      stackModeWrap.hidden = false;
+      stackModeWrap.style.display = "";
+      const stored = getStoredStackLaunchMode();
+      setStackModeRadios(stored ?? "single");
+      return;
+    }
+
+    if (body.monitorClusterApplySetInEnv === true) {
+      stackModeWrap.hidden = true;
+      stackModeWrap.style.display = "none";
+      return;
+    }
+
+    stackModeWrap.hidden = false;
+    stackModeWrap.style.display = "";
+
+    const stored = getStoredStackLaunchMode();
+    let inferred: StackLaunchMode = "single";
+    if (body.applyCluster === true) inferred = "cluster";
+    const mode = stored ?? inferred;
+    setStackModeRadios(mode);
+  } catch {
+    if (stackModeWrap) {
+      stackModeWrap.hidden = false;
+      stackModeWrap.style.display = "";
+      const stored = getStoredStackLaunchMode();
+      setStackModeRadios(stored ?? "single");
+    }
+  }
+}
+
+function updateStackModeVisibility(provider: MonitorProvider): void {
+  if (!stackModeWrap) return;
+  if (provider === "vllm") {
+    stackModeWrap.hidden = true;
+    stackModeWrap.style.display = "none";
+    return;
+  }
+  void syncStackModeRadiosFromServerAndStorage();
+}
 
 function updateContainerCopy(provider: MonitorProvider): void {
   if (containerScriptLabel) {
@@ -38,6 +107,7 @@ function updateContainerCopy(provider: MonitorProvider): void {
     containerLaunchScriptLabel.textContent =
       provider === "vllm" ? "scripts/vllm/*.sh" : "scripts/sglang/*.sh";
   }
+  updateStackModeVisibility(provider);
 }
 
 function stripSlashName(names: string): string {
@@ -131,6 +201,7 @@ async function loadPresets(): Promise<void> {
       selPreset.appendChild(opt);
     }
     await selectDefaultPresetFromRunningContainer();
+    await syncStackModeRadiosFromServerAndStorage();
     setStatus("Pick a preset, then start or stop the host container.");
   } catch (e) {
     selPreset.innerHTML = "";
@@ -238,6 +309,16 @@ async function stopStack(): Promise<void> {
 
 export function initContainerStack(): void {
   updateContainerCopy(getMonitorProvider());
+  radioStackModeSingle?.addEventListener("change", () => {
+    if (radioStackModeSingle?.checked) setStoredStackLaunchMode("single");
+  });
+  radioStackModeCluster?.addEventListener("change", () => {
+    if (radioStackModeCluster?.checked) setStoredStackLaunchMode("cluster");
+  });
+  window.addEventListener(STACK_LAUNCH_MODE_EVENT, () => {
+    const m = getStoredStackLaunchMode();
+    if (m) setStackModeRadios(m);
+  });
   selPreset?.addEventListener("change", () => void refreshStatus());
   btnRun?.addEventListener("click", () => void runStack());
   btnStop?.addEventListener("click", () => void stopStack());

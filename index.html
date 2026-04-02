@@ -80,6 +80,26 @@
                 <select id="sel-stack-preset" aria-label="Stack container preset"></select>
               </label>
             </div>
+            <fieldset class="container-stack-mode" id="container-stack-mode-wrap" hidden>
+              <legend class="container-stack-mode__legend">Launch workflow (SGLang)</legend>
+              <p class="hint container-stack-mode__hint">
+                Same idle container either way; this syncs the <strong>Launch</strong> tab “Multi-node cluster”
+                option (exports / rank / dist). If <code>MONITOR_CLUSTER_APPLY</code> is set in
+                <code>.env</code>, this block is hidden and Launch follows <code>.env</code> only.
+                Otherwise use <strong>Single</strong> for one machine or <strong>Cluster</strong> when using
+                <code>--nnodes</code> &gt; 1 across hosts.
+              </p>
+              <div class="container-stack-mode__radios" role="group" aria-label="Single-node or cluster launch">
+                <label class="container-stack-mode__label">
+                  <input type="radio" name="container-stack-mode" id="radio-stack-mode-single" value="single" />
+                  <span>Single-node</span>
+                </label>
+                <label class="container-stack-mode__label">
+                  <input type="radio" name="container-stack-mode" id="radio-stack-mode-cluster" value="cluster" />
+                  <span>Cluster (multi-node)</span>
+                </label>
+              </div>
+            </fieldset>
             <div class="launch-status-box container-actions">
               <div class="launch-toolbar container-toolbar">
                 <button type="button" id="btn-stack-refresh" class="btn">Refresh</button>

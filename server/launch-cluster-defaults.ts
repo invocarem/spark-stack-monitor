@@ -20,6 +20,11 @@ export type LaunchClusterDefaultsResponse = {
   nodeRank: string;
   /** When true, the UI checks “Apply cluster options” on load */
   applyCluster: boolean;
+  /**
+   * True when `MONITOR_CLUSTER_APPLY` is set (non-empty) in `.env`.
+   * Container tab hides Single/Cluster; Launch follows `.env` only (no localStorage override).
+   */
+  monitorClusterApplySetInEnv: boolean;
 };
 
 export function getLaunchClusterDefaultsFromEnv(): LaunchClusterDefaultsResponse {
@@ -53,7 +58,9 @@ export function getLaunchClusterDefaultsFromEnv(): LaunchClusterDefaultsResponse
   const nnodes = process.env.MONITOR_CLUSTER_NNODES?.trim() || "";
   const nodeRank = process.env.MONITOR_CLUSTER_NODE_RANK?.trim() || "";
 
-  const applyFlag = process.env.MONITOR_CLUSTER_APPLY?.trim().toLowerCase();
+  const applyFlagRaw = process.env.MONITOR_CLUSTER_APPLY?.trim();
+  const applyFlag = applyFlagRaw?.toLowerCase() ?? "";
+  const monitorClusterApplySetInEnv = Boolean(applyFlagRaw && applyFlagRaw.length > 0);
   const hasAny =
     Object.keys(launchEnv).length > 0 || Boolean(distInit || nnodes || nodeRank);
   let applyCluster: boolean;
@@ -71,5 +78,67 @@ export function getLaunchClusterDefaultsFromEnv(): LaunchClusterDefaultsResponse
     nnodes,
     nodeRank,
     applyCluster,
+    monitorClusterApplySetInEnv,
   };
+}
+
+/**
+ * Extra `-e` variables for SGLang `docker run` (Container tab) when `MONITOR_CLUSTER_APPLY` is set in `.env`.
+ * Mirrors `run_master.sh` / `run_worker.sh` NCCL and distributed settings; per-host values come from env
+ * (e.g. `NCCL_IB_DISABLE=1` on worker, `0` on head).
+ */
+export function shouldInjectSglangStackClusterDockerEnv(): boolean {
+  const raw = process.env.MONITOR_CLUSTER_APPLY?.trim();
+  return Boolean(raw && raw.length > 0);
+}
+
+export function getSglangStackDockerEnvForClusterRun(): Record<string, string> {
+  const out: Record<string, string> = {};
+  const put = (key: string, value: string): void => {
+    const v = value.trim();
+    if (v) out[key] = v;
+  };
+
+  put("CUDA_VISIBLE_DEVICES", process.env.CUDA_VISIBLE_DEVICES ?? "");
+  put(
+    "NCCL_SOCKET_IFNAME",
+    pick(
+      process.env.MONITOR_CLUSTER_NCCL_SOCKET_IFNAME,
+      process.env.NCCL_SOCKET_IFNAME,
+    ),
+  );
+  put("NCCL_DEBUG", process.env.NCCL_DEBUG ?? "");
+  put(
+    "NCCL_IB_DISABLE",
+    pick(
+      process.env.MONITOR_CLUSTER_NCCL_IB_DISABLE,
+      process.env.NCCL_IB_DISABLE,
+    ),
+  );
+  put("NCCL_IB_GID_INDEX", process.env.NCCL_IB_GID_INDEX ?? "");
+  put(
+    "MASTER_ADDR",
+    pick(process.env.MONITOR_CLUSTER_MASTER_ADDR, process.env.MASTER_ADDR),
+  );
+  put(
+    "MASTER_PORT",
+    pick(process.env.MONITOR_CLUSTER_MASTER_PORT, process.env.MASTER_PORT),
+  );
+  put(
+    "WORLD_SIZE",
+    pick(process.env.MONITOR_CLUSTER_WORLD_SIZE, process.env.WORLD_SIZE),
+  );
+  put("NCCL_IB_TIMEOUT", process.env.NCCL_IB_TIMEOUT ?? "");
+  put("NCCL_IB_RETRY_CNT", process.env.NCCL_IB_RETRY_CNT ?? "");
+  put(
+    "NCCL_ASYNC_ERROR_HANDLING",
+    process.env.NCCL_ASYNC_ERROR_HANDLING ?? "",
+  );
+  put("NCCL_BLOCKING_WAIT", process.env.NCCL_BLOCKING_WAIT ?? "");
+  put(
+    "TORCH_DISTRIBUTED_TIMEOUT",
+    process.env.TORCH_DISTRIBUTED_TIMEOUT ?? "",
+  );
+
+  return out;
 }

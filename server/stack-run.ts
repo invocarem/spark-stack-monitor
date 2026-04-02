@@ -11,6 +11,10 @@
 import os from "node:os";
 import path from "node:path";
 import { assertSafeContainerName, dockerHost } from "./docker.js";
+import {
+  getSglangStackDockerEnvForClusterRun,
+  shouldInjectSglangStackClusterDockerEnv,
+} from "./launch-cluster-defaults.js";
 import { findRepoRoot } from "./repo-root.js";
 
 export type StackProvider = "sglang" | "vllm";
@@ -155,11 +159,14 @@ export async function runStackPreset(presetId: string): Promise<RunStackResult> 
     preset.provider === "vllm" ? vllmStackHostPort() : sglangStackHostPort();
   const containerPublish = preset.provider === "vllm" ? "8000" : "30000";
 
-  const args: string[] = [
-    "run",
-    "-d",
-    "--gpus",
-    "all",
+  const clusterStackEnv =
+    preset.provider === "sglang" && shouldInjectSglangStackClusterDockerEnv();
+
+  const args: string[] = ["run", "-d", "--gpus", "all"];
+  if (clusterStackEnv) {
+    args.push("--network", "host");
+  }
+  args.push(
     "--name",
     preset.containerName,
     "--shm-size",
@@ -172,10 +179,15 @@ export async function runStackPreset(presetId: string): Promise<RunStackResult> 
     `${repoRoot}:/workspace`,
     "--ipc=host",
     "--rm",
-  ];
+  );
   const token = process.env.HF_TOKEN?.trim();
   if (token) {
     args.push("-e", `HF_TOKEN=${token}`);
+  }
+  if (clusterStackEnv) {
+    for (const [k, v] of Object.entries(getSglangStackDockerEnvForClusterRun())) {
+      args.push("-e", `${k}=${v}`);
+    }
   }
   for (const e of preset.extraEnv) {
     args.push("-e", e);
@@ -196,7 +208,7 @@ export async function runStackPreset(presetId: string): Promise<RunStackResult> 
     ok: true,
     container: preset.containerName,
     started: true,
-    message: `Created and started ${preset.containerName} (same flags as ${preset.matchesScript}; monitor uses sleep infinity). Host port ${hostPublish}→${containerPublish}; repo at /workspace.`,
+    message: `Created and started ${preset.containerName} (same flags as ${preset.matchesScript}; monitor uses sleep infinity).${clusterStackEnv ? " Cluster `.env` NCCL/distributed env and --network host applied." : ""} Host port ${hostPublish}→${containerPublish}; repo at /workspace.`,
   };
 }
 
