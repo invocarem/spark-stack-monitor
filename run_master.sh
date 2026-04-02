@@ -13,6 +13,11 @@ docker run --gpus all \
     --env "MASTER_ADDR=192.168.100.11" \
     --env "MASTER_PORT=50000" \
     --env "WORLD_SIZE=2" \
+    --env "NCCL_IB_TIMEOUT=22" \
+    --env "NCCL_IB_RETRY_CNT=7" \
+    --env "NCCL_ASYNC_ERROR_HANDLING=1" \
+    --env "NCCL_BLOCKING_WAIT=1" \
+    --env "TORCH_DISTRIBUTED_TIMEOUT=1800" \
     --ipc=host \
     -it --rm \
     scitrera/dgx-spark-sglang:0.5.9-t5 \
