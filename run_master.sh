@@ -6,9 +6,10 @@ docker run --gpus all \
     -v $(pwd):/workspace \
     --env "HF_TOKEN=$HF_TOKEN" \
     --env "CUDA_VISIBLE_DEVICES=0" \
-    --env "NCCL_SOCKET_IFNAME=eth0" \
+    --env "NCCL_SOCKET_IFNAME=enp1s0f1np1" \
     --env "NCCL_DEBUG=INFO" \
-    --env "NCCL_IB_DISABLE=1" \
+    --env "NCCL_IB_DISABLE=0" \
+    --env "NCCL_IB_GID_INDEX=3" \
     --env "MASTER_ADDR=192.168.100.11" \
     --env "MASTER_PORT=50000" \
     --env "WORLD_SIZE=2" \

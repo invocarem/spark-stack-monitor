@@ -1,14 +1,15 @@
 docker run --gpus all \
-    --name sglang_node_tf5 \
+    --name sglang_node_tf5_worker \
     --network host \
     --shm-size 32g \
     -v ~/.cache/huggingface:/root/.cache/huggingface \
     -v $(pwd):/workspace \
     --env "HF_TOKEN=$HF_TOKEN" \
     --env "CUDA_VISIBLE_DEVICES=0" \
-    --env "NCCL_SOCKET_IFNAME=eth0" \
+    --env "NCCL_SOCKET_IFNAME=enp1s0f0np0" \
     --env "NCCL_DEBUG=INFO" \
-    --env "NCCL_IB_DISABLE=1" \
+    --env "NCCL_IB_DISABLE=0" \
+    --env "NCCL_IB_GID_INDEX=3" \
     --env "MASTER_ADDR=192.168.100.11" \
     --env "MASTER_PORT=50000" \
     --env "WORLD_SIZE=2" \
@@ -22,6 +23,4 @@ docker run --gpus all \
         --nnodes 2 \
         --node-rank 1 \
         --dist-init-addr 192.168.100.11:50000 \
-        --host 0.0.0.0 \
-        --port 30000 \
         --trust-remote-code
