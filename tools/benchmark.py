@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run `python3 -m sglang.bench_serving` with defaults for this stack (OpenAI API on :8000).
+"""Run `python3 -m sglang.bench_serving` with defaults for this stack (OpenAI API on :30000).
 
 ``sglang.bench_serving`` uses ``--model`` for two things: (1) a Hugging Face id so it can run
 ``check_chat_template``, and (2) unless ``--served-model-name`` is set, the OpenAI ``model``
@@ -28,7 +28,7 @@ import sys
 import urllib.error
 import urllib.request
 
-DEFAULT_BASE = os.environ.get("BENCHMARK_BASE_URL", "http://127.0.0.1:8000")
+DEFAULT_BASE = os.environ.get("BENCHMARK_BASE_URL", "http://127.0.0.1:30000")
 DEFAULT_BACKEND = os.environ.get("BENCHMARK_BACKEND", "sglang-oai-chat")
 # Long context; avoids gpt2's 1024 limit during bench retokenization. Override if needed.
 DEFAULT_TOKENIZER = os.environ.get("BENCHMARK_TOKENIZER", "Qwen/Qwen2.5-0.5B-Instruct")
