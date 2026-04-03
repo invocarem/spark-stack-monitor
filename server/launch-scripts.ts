@@ -111,6 +111,101 @@ export type LaunchArgPair = {
   enabled: boolean;
 };
 
+/** Flags merged from the Launch tab cluster section; listed first when appending to a script. */
+const INJECT_ARG_KEY_ORDER = ["--dist-init-addr", "--nnodes", "--node-rank"] as const;
+
+function collectArgKeysPresentAsLines(lines: readonly string[]): Set<string> {
+  const keys = new Set<string>();
+  for (const rawLine of lines) {
+    const m = rawLine.match(/^(\s*)(--[A-Za-z0-9][A-Za-z0-9-]*)(?:\s+.*)?$/);
+    if (m) keys.add(m[2] ?? "");
+  }
+  return keys;
+}
+
+function missingEnabledArgOverrides(
+  originalLines: readonly string[],
+  argOverrides: readonly LaunchArgPair[],
+  byKey: Map<string, LaunchArgPair>,
+): LaunchArgPair[] {
+  const present = collectArgKeysPresentAsLines(originalLines);
+  const out: LaunchArgPair[] = [];
+  for (const ov of byKey.values()) {
+    if (!ov.enabled || !ov.value.trim()) continue;
+    if (present.has(ov.key)) continue;
+    out.push(ov);
+  }
+  return out.sort((a, b) => {
+    const ia = INJECT_ARG_KEY_ORDER.indexOf(a.key as (typeof INJECT_ARG_KEY_ORDER)[number]);
+    const ib = INJECT_ARG_KEY_ORDER.indexOf(b.key as (typeof INJECT_ARG_KEY_ORDER)[number]);
+    const ra = ia === -1 ? Number.POSITIVE_INFINITY : ia;
+    const rb = ib === -1 ? Number.POSITIVE_INFINITY : ib;
+    if (ra !== rb) return ra - rb;
+    return a.key.localeCompare(b.key);
+  });
+}
+
+function injectMissingArgsIntoRenderedLines(
+  updated: string[],
+  missing: LaunchArgPair[],
+  provider: LaunchProvider,
+): string[] {
+  if (missing.length === 0) return updated;
+
+  const launchLineRe =
+    provider === "sglang"
+      ? /python3\s+-m\s+sglang\.launch_server\b/
+      : /\bvllm\s+serve\b/;
+
+  let start = -1;
+  for (let i = 0; i < updated.length; i += 1) {
+    if (launchLineRe.test(updated[i] ?? "")) {
+      start = i;
+      break;
+    }
+  }
+  if (start < 0) {
+    return updated;
+  }
+
+  let lastArgLine = -1;
+  for (let i = start + 1; i < updated.length; i += 1) {
+    if (/^\s+--/.test(updated[i] ?? "")) lastArgLine = i;
+  }
+
+  const baseIndent = "    ";
+  const insertedLines: string[] = [];
+  if (lastArgLine < 0) {
+    const first = updated[start] ?? "";
+    const t = first.trimEnd();
+    const lineWithSlash = t.endsWith("\\") ? t : `${t} \\`;
+    for (let j = 0; j < missing.length; j += 1) {
+      const m = missing[j]!;
+      const isLast = j === missing.length - 1;
+      insertedLines.push(`${baseIndent}${m.key} ${m.value}${isLast ? "" : " \\"}`);
+    }
+    return [...updated.slice(0, start), lineWithSlash, ...insertedLines, ...updated.slice(start + 1)];
+  }
+
+  const indentMatch = (updated[lastArgLine] ?? "").match(/^(\s*)--/);
+  const indent = indentMatch?.[1] ?? baseIndent;
+
+  const prefix = updated.slice(0, lastArgLine);
+  const suffix = updated.slice(lastArgLine + 1);
+  const lastLineRaw = updated[lastArgLine] ?? "";
+  const lastTrimmed = lastLineRaw.trimEnd();
+  const lastWithSlash = lastTrimmed.endsWith("\\") ? lastTrimmed : `${lastTrimmed} \\`;
+
+  const newMiddle: string[] = [];
+  for (let j = 0; j < missing.length; j += 1) {
+    const m = missing[j]!;
+    const isLast = j === missing.length - 1;
+    newMiddle.push(`${indent}${m.key} ${m.value}${isLast ? "" : " \\"}`);
+  }
+
+  return [...prefix, lastWithSlash, ...newMiddle, ...suffix];
+}
+
 /** Allowed names for optional `export` lines prepended before `bash script.sh` (multi-node NCCL / torch). */
 const LAUNCH_ENV_KEY_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
@@ -482,7 +577,9 @@ export async function runLaunchScriptInContainer(
       const hasSlash = rawLine.trimEnd().endsWith("\\");
       return [`${indent}${ov.key} ${ov.value}${hasSlash ? " \\" : ""}`];
     });
-    overriddenScriptB64 = Buffer.from(`${updated.join("\n")}\n`, "utf8").toString("base64");
+    const missing = missingEnabledArgOverrides(lines, argOverrides, byKey);
+    const finalLines = injectMissingArgsIntoRenderedLines(updated, missing, provider);
+    overriddenScriptB64 = Buffer.from(`${finalLines.join("\n")}\n`, "utf8").toString("base64");
   }
   /**
    * Detached `docker exec` has no TTY; many loaders disable or break progress bars without one.
