@@ -25,4 +25,5 @@ python3 -m sglang.launch_server \
     --speculative-eagle-topk 1 \
     --speculative-num-draft-tokens 4 \
     --attention-backend ${ATTENTION_BACKEND} \
+    --mamba-scheduler-strategy extra_buffer \
     --trust-remote-code

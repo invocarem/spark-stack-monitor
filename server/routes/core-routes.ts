@@ -101,7 +101,6 @@ export function registerCoreRoutes(app: Hono): void {
       container: result.container,
       started: result.started,
       message: result.message,
-      ...(result.scriptRelPath ? { scriptRelPath: result.scriptRelPath } : {}),
     });
   });
 

@@ -13,7 +13,7 @@ FP8_GEMM_BACKEND="cutlass"
 TOOL_CALL_PARSER="qwen3_coder"
 
 # Launch the server with single device
-sglang serve \
+python3 -m sglang.launch_server \
     --model-path ${MODEL} \
     --served-model-name ${SERVED_MODEL_NAME} \
     --context-length ${CONTEXT_LENGTH} \
