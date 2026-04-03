@@ -12,8 +12,7 @@ ATTENTION_BACKEND="triton"
 TOOL_CALL_PARSER="qwen3_coder"
 
 # Launch the server with single device
-#    --mamba-scheduler-strategy extra_buffer \
-sglang server \
+sglang serve \
     --model-path ${MODEL} \
     --served-model-name ${SERVED_MODEL_NAME} \
     --context-length ${CONTEXT_LENGTH} \

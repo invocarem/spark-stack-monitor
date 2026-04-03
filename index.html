@@ -68,7 +68,10 @@
               <summary>Host env and paths</summary>
               <p>
                 API runs on host Docker. Optional <code>HF_TOKEN</code> is passed through. Mount root is
-                <code>MONITOR_REPO_ROOT</code> (or auto-detected). SGLang presets publish
+                <code>MONITOR_REPO_ROOT</code> (or auto-detected). On <strong>Start</strong>, the API writes a
+                helper script under <code>.monitor/</code> (e.g. <code>monitor-stack-&lt;preset&gt;.sh</code>) with
+                the same <code>docker run</code> flags, then runs it — similar in spirit to Launch writing under
+                <code>/workspace/.monitor/</code> inside the container. SGLang presets publish
                 <code>MONITOR_STACK_HOST_PORT</code> (default <code>30000</code>) to container port
                 <code>30000</code> (same as <code>scripts/sglang/*.sh</code>). vLLM presets default
                 <code>8000→8000</code>.
