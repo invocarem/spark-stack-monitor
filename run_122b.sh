@@ -1,0 +1,43 @@
+docker run --gpus all \
+    --name sglang_qwen122b_master \
+    --network host \
+    --shm-size 64g \
+    -v ~/.cache/huggingface:/root/.cache/huggingface \
+    -v $(pwd):/workspace \
+    --env "HF_TOKEN=$HF_TOKEN" \
+    --env "CUDA_VISIBLE_DEVICES=0,1" \
+    --env "NCCL_SOCKET_IFNAME=enp1s0f1np1" \
+    --env "NCCL_DEBUG=INFO" \
+    --env "NCCL_IB_DISABLE=0" \
+    --env "NCCL_IB_GID_INDEX=3" \
+    --env "MASTER_ADDR=192.168.100.11" \
+    --env "MASTER_PORT=50000" \
+    --env "WORLD_SIZE=4" \
+    --env "NCCL_IB_TIMEOUT=22" \
+    --env "NCCL_IB_RETRY_CNT=7" \
+    --env "NCCL_ASYNC_ERROR_HANDLING=1" \
+    --env "NCCL_BLOCKING_WAIT=1" \
+    --env "TORCH_DISTRIBUTED_TIMEOUT=3600" \
+    --env "SGLANG_USE_AITER=1" \
+    --ipc=host \
+    -it --rm \
+    scitrera/dgx-spark-sglang:0.5.10rc0 \
+    sglang serve \
+        --model-path Intel/Qwen3.5-122B-A10B-int4-AutoRound \
+        --served-model-name qwen3.5-122b \
+        --tp-size 1 \
+        --nnodes 1 \
+        --node-rank 0 \
+        --dist-init-addr 192.168.100.11:50000 \
+        --host 0.0.0.0 \
+        --port 30000 \
+        --tokenizer-path Qwen/Qwen3.5-2B \
+        --quantization auto-round \
+        --kv-cache-dtype auto \
+        --trust-remote-code \
+        --context-length 8192 \
+        --mem-fraction-static 0.85 \
+        --attention-backend flashinfer \
+        --enable-metrics \
+        --disable-cuda-graph \
+        --disable-shared-experts-fusion

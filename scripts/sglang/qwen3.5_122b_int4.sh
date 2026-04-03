@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Configuration variables
-MODEL="Qwen/Qwen3.5-122B-A10B-GPTQ-Int4"
+MODEL="Intel/Qwen3.5-122B-A10B-int4-AutoRound"
 SERVED_MODEL_NAME="qwen3.5-122b"
 CONTEXT_LENGTH=8192
 MEM_FRACTION_STATIC=0.85
@@ -26,11 +26,8 @@ SGLANG_USE_AITER=1 python3 -m sglang.launch_server \
     --tool-call-parser ${TOOL_CALL_PARSER} \
     --reasoning-parser qwen3 \
     --mamba-scheduler-strategy extra_buffer \
-    --speculative-algo NEXTN \
-    --speculative-num-steps 2 \
-    --speculative-eagle-topk 1 \
-    --speculative-num-draft-tokens 2 \
-    --quantization moe_wna16 \
-    --kv-cache-dtype bf16 \
+    --quantization auto-round \
+    --tokenizer-path Qwen/Qwen3.5-2B \
+    --kv-cache-dtype auto \
     --enable-cache-report \
     --trust-remote-code
