@@ -13,6 +13,7 @@ docker run --gpus all \
     --env "NCCL_BLOCKING_WAIT=1" \
     --env "MASTER_ADDR=192.168.100.11" \
     --env "MASTER_PORT=50000" \
+    --env "SGLANG_DIST_BACKEND=gloo" \
     --env "WORLD_SIZE=2" \
     --env "TORCH_DISTRIBUTED_TIMEOUT=1800" \
     --ipc=host \

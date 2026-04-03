@@ -15,6 +15,7 @@ docker run --gpus all \
     --env "WORLD_SIZE=2" \
     --env "NCCL_IB_TIMEOUT=22" \
     --env "NCCL_IB_RETRY_CNT=7" \
+    --env "SGLANG_DIST_BACKEND=gloo" \
     --env "NCCL_ASYNC_ERROR_HANDLING=1" \
     --env "NCCL_BLOCKING_WAIT=1" \
     --env "TORCH_DISTRIBUTED_TIMEOUT=1800" \
@@ -31,4 +32,5 @@ docker run --gpus all \
         --host 0.0.0.0 \
         --port 30000 \
         --attention-backend triton \
+    	--mamba-scheduler-strategy extra_buffer \
         --trust-remote-code
