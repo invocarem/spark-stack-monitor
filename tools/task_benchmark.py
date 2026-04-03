@@ -38,6 +38,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
+from urllib.parse import urlsplit, urlunsplit
 from typing import Any
 
 
@@ -59,6 +60,30 @@ def fetch_served_model_id(base_url: str, timeout: float) -> str | None:
     except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, json.JSONDecodeError, OSError):
         return None
     return None
+
+
+def peer_inference_base_urls(base_url: str) -> list[str]:
+    """Primary URL first, then the other common local port (8000 vLLM vs 30000 SGLang in this repo)."""
+    primary = base_url.strip().rstrip("/")
+    if not primary:
+        return []
+    parsed = urlsplit(primary if "://" in primary else f"//{primary}", scheme="http")
+    scheme = parsed.scheme or "http"
+    host = parsed.hostname
+    if not host:
+        return [primary]
+    port = parsed.port
+    out: list[str] = [primary]
+    if port == 8000:
+        alt_netloc = f"{host}:30000"
+    elif port == 30000:
+        alt_netloc = f"{host}:8000"
+    else:
+        return out
+    alt = urlunsplit((scheme, alt_netloc, parsed.path or "", "", "")).rstrip("/")
+    if alt != primary:
+        out.append(alt)
+    return out
 
 
 def assistant_text_from_completion(data: object) -> str | None:
@@ -235,8 +260,15 @@ def main() -> None:
         raise SystemExit(2)
 
     model = args.model.strip()
+    base_url = args.base_url.strip().rstrip("/")
     if not model:
-        model = fetch_served_model_id(args.base_url, min(30.0, args.timeout)) or ""
+        t_disc = min(30.0, args.timeout)
+        for candidate in peer_inference_base_urls(base_url):
+            mid = fetch_served_model_id(candidate, t_disc) or ""
+            if mid:
+                base_url = candidate.rstrip("/")
+                model = mid
+                break
     if not model:
         print(
             "task_benchmark: set --model or TASK_BENCH_MODEL, or ensure GET /v1/models works.",
@@ -249,7 +281,7 @@ def main() -> None:
         print("task_benchmark: no cases loaded.", file=sys.stderr)
         raise SystemExit(2)
 
-    print(f"task_benchmark: model={model!r} cases={len(cases)} base={args.base_url!r}\n", file=sys.stderr)
+    print(f"task_benchmark: model={model!r} cases={len(cases)} base={base_url!r}\n", file=sys.stderr)
 
     results: list[dict[str, Any]] = []
     t0 = time.perf_counter()
@@ -278,7 +310,7 @@ def main() -> None:
 
         t_req = time.perf_counter()
         status, data, err = chat_completion(
-            args.base_url,
+            base_url,
             model,
             messages,
             args.temperature,
