@@ -13,7 +13,7 @@ TOOL_CALL_PARSER="qwen3_coder"
 
 # Launch the server with single device
 #    --mamba-scheduler-strategy extra_buffer \
-psglang server \
+sglang server \
     --model-path ${MODEL} \
     --served-model-name ${SERVED_MODEL_NAME} \
     --context-length ${CONTEXT_LENGTH} \
