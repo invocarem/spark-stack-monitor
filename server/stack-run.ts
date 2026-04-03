@@ -41,6 +41,16 @@ export const STACK_PRESETS: readonly StackPreset[] = [
     image: "scitrera/dgx-spark-sglang:0.5.9-t5",
     extraEnv: [],
   },
+   {
+    id: "dgx_spark_tf5_10",
+    label: "SciTrera DGX Spark SGLang (tf5 10)",
+    provider: "sglang",
+    matchesScript: "containers/sglang/run-docker.sh",
+    containerName: "sglang_node_tf5_10",
+    image: "scitrera/dgx-spark-sglang:0.5.10rc0",
+    extraEnv: ["SGLANG_ENABLE_SPEC_V2=1"],
+    
+  },
   {
     id: "lmsys_spark",
     label: "LM.Sys SGLang (spark)",

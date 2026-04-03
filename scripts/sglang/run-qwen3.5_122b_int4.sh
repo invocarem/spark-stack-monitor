@@ -25,6 +25,7 @@ SGLANG_USE_AITER=1 python3 -m sglang.launch_server \
     --fp8-gemm-backend ${FP8_GEMM_BACKEND} \
     --tool-call-parser ${TOOL_CALL_PARSER} \
     --reasoning-parser qwen3 \
+    --mamba-scheduler-strategy extra_buffer \
     --speculative-algo NEXTN \
     --speculative-num-steps 2 \
     --speculative-eagle-topk 1 \
