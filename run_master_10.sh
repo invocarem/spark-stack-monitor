@@ -21,7 +21,7 @@ docker run --gpus all \
     --ipc=host \
     -it --rm \
     scitrera/dgx-spark-sglang:0.5.10rc0 \
-    python3 -m sglang.launch_server \
+    sglang serve \
         --model-path Qwen/Qwen3.5-35B-A3B \
         --served-model-name qwen3.5-35b \
         --tp-size 2 \
