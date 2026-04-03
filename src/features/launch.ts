@@ -70,7 +70,7 @@ const launchClusterNnodes = document.querySelector<HTMLInputElement>("#launch-cl
 const launchClusterNodeRank = document.querySelector<HTMLInputElement>("#launch-cluster-node-rank");
 const launchClusterFields = document.querySelector<HTMLElement>("#launch-cluster-fields");
 
-/** `true` = pgrep saw launch_server; `false` = not running; `null` = not checked or unknown */
+/** `true` = pgrep saw SGLang server process; `false` = not running; `null` = not checked or unknown */
 let lastServerRunning: boolean | null = null;
 let lastServedModel: string | null = null;
 const scriptsById = new Map<string, LaunchScriptInfo>();
@@ -86,11 +86,11 @@ function updateLaunchCopy(provider: MonitorProvider): void {
   if (launchTitle) {
     launchTitle.innerHTML = isVllm
       ? "Launch vLLM (<code>serve</code>)"
-      : "Launch SGLang (<code>launch_server</code>)";
+      : "Launch SGLang (<code>launch_server</code> / <code>sglang serve</code>)";
   }
   const hostDir = isVllm ? "./scripts/vllm" : "./scripts/sglang";
   const containerDir = isVllm ? "/workspace/scripts/vllm" : "/workspace/scripts/sglang";
-  const cmd = isVllm ? "vllm serve" : "python3 -m sglang.launch_server";
+  const cmd = isVllm ? "vllm serve" : "python3 -m sglang.launch_server or sglang serve";
   const logPath = isVllm ? "/workspace/.monitor/vllm-launch.log" : "/workspace/.monitor/sglang-launch.log";
   if (launchScriptDirLabel) launchScriptDirLabel.textContent = hostDir;
   if (launchCmdLabel) launchCmdLabel.textContent = cmd;

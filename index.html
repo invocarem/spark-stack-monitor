@@ -17,7 +17,7 @@
         <p class="lede">
           <strong>Container</strong> runs the stack image on the host (<code>docker run</code> / start /
           stop). <strong>Launch</strong> runs <code>scripts/sglang/*.sh</code> inside that container to start
-          <code>sglang.launch_server</code>. Optional vLLM testing is a
+          <code>sglang.launch_server</code> or <code>sglang serve</code>. Optional vLLM testing is a
           <a href="/vllm.html">separate page</a> (does not change presets here). Set the
           <strong>model id</strong> for Chat/Benchmark; other tabs: Logs, Tools, metrics, benchmark, chat.
         </p>
@@ -115,11 +115,11 @@
         <div id="panel-launch" role="tabpanel" aria-labelledby="tab-launch" class="tab-panel launch-panel hidden"
           data-panel="launch" hidden>
           <section class="panel panel-nested">
-            <h2 id="launch-title">Launch SGLang (<code>launch_server</code>)</h2>
+            <h2 id="launch-title">Launch SGLang (<code>launch_server</code> / <code>sglang serve</code>)</h2>
             <p class="launch-lead">
               After a stack container is running, pick it here and run a script from
               <code id="launch-script-dir-label">./scripts/sglang</code>
-              to start the LLM with <code id="launch-cmd-label">python3 -m sglang.launch_server</code>. While the server is
+              to start the LLM with <code id="launch-cmd-label">python3 -m sglang.launch_server or sglang serve</code>. While the server is
               running, starting again is blocked. Script output while the model loads is on the
               <strong>Logs</strong> tab (launch script log).
             </p>
@@ -148,7 +148,7 @@
             </div>
             <div class="launch-args-editor">
               <p class="hint">
-                Launch args from script (<code id="launch-args-cmd-label">python3 -m sglang.launch_server</code>): edit values or uncheck to remove
+                Launch args from script (<code id="launch-args-cmd-label">python3 -m sglang.launch_server or sglang serve</code>): edit values or uncheck to remove
                 unsupported flags.
               </p>
               <div id="launch-args-empty" class="hint">Select a script to load args.</div>

@@ -63,6 +63,16 @@ const DEFAULT_LAUNCH_LOG_TAIL_LINES = Math.min(
 
 const BASENAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9._-]*\.sh$/;
 
+/** First line of a multi-line SGLang server invocation in a shell script. */
+const SGLANG_LAUNCH_LINE_RE =
+  /python3\s+-m\s+sglang\.launch_server\b|\bsglang\s+serve\b/;
+
+/**
+ * `pgrep -f` extended-regex pattern: `python -m sglang.launch_server` or the `sglang serve` CLI.
+ * Passed as a single argv (no shell), and embedded in `sh -c` single-quoted snippets.
+ */
+const SGLANG_PGREP_ERE = String.raw`sglang\.launch_server|sglang serve`;
+
 /** Render terminal CR behavior so progress bars update in-place. */
 export function normalizeLaunchLogText(text: string): string {
   if (!text) return text;
@@ -153,9 +163,7 @@ function injectMissingArgsIntoRenderedLines(
   if (missing.length === 0) return updated;
 
   const launchLineRe =
-    provider === "sglang"
-      ? /python3\s+-m\s+sglang\.launch_server\b/
-      : /\bvllm\s+serve\b/;
+    provider === "sglang" ? SGLANG_LAUNCH_LINE_RE : /\bvllm\s+serve\b/;
 
   let start = -1;
   for (let i = 0; i < updated.length; i += 1) {
@@ -277,10 +285,7 @@ function parseLaunchArgsFromScriptText(scriptText: string): LaunchArgPair[] {
   for (const rawLine of lines) {
     const trimmed = rawLine.trim();
     if (!inLaunch) {
-      if (
-        /python3\s+-m\s+sglang\.launch_server\b/.test(trimmed) ||
-        /\bvllm\s+serve\b/.test(trimmed)
-      ) {
+      if (SGLANG_LAUNCH_LINE_RE.test(trimmed) || /\bvllm\s+serve\b/.test(trimmed)) {
         inLaunch = true;
       } else {
         continue;
@@ -377,11 +382,11 @@ function parseServedModelFromArgs(text: string): string | null {
 }
 
 /**
- * Detect `python -m sglang.launch_server` via `pgrep -f sglang.launch_server` inside the container.
+ * Detect SGLang via `pgrep -f` (`python -m sglang.launch_server` or `sglang serve`) inside the container.
  * When running, tries (1) `ps` args for `--served-model-name`, then (2) `GET /v1/models` on the host inference URL.
  */
 function providerProcessPattern(provider: LaunchProvider): string {
-  return provider === "vllm" ? "vllm serve" : "sglang.launch_server";
+  return provider === "vllm" ? "vllm serve" : SGLANG_PGREP_ERE;
 }
 
 function providerName(provider: LaunchProvider): string {
@@ -607,7 +612,7 @@ export async function runLaunchScriptInContainer(
   return { ok: true };
 }
 
-/** Kill processes matching `sglang.launch_server` (same pattern as `getLaunchServerStatus`). */
+/** Kill processes matching the same `pgrep -f` pattern as `getLaunchServerStatus`. */
 function stopLaunchShell(provider: LaunchProvider): string {
   const procPattern = providerProcessPattern(provider);
   return `p=$(pgrep -f '${procPattern}'||true); [ -z "$p" ]&&exit 0; kill -TERM $p 2>/dev/null; for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do q=$(pgrep -f '${procPattern}'||true); [ -z "$q" ]&&exit 0; sleep 1; done; p2=$(pgrep -f '${procPattern}'||true); [ -n "$p2" ]&&kill -KILL $p2 2>/dev/null; exit 0`;
@@ -660,7 +665,7 @@ export async function stopLaunchServerInContainer(
     return {
       ok: false,
       error:
-        "launch_server still appears to be running after SIGTERM/SIGKILL. Try `docker exec` into the container or restart it.",
+        "SGLang still appears to be running after SIGTERM/SIGKILL. Try `docker exec` into the container or restart it.",
     };
   }
 
