@@ -38,7 +38,8 @@ export const STACK_PRESETS: readonly StackPreset[] = [
     provider: "sglang",
     matchesScript: "containers/sglang/run-docker.sh",
     containerName: "sglang_node_tf5",
-    image: "scitrera/dgx-spark-sglang:0.5.9-t5",
+    image: "scitrera/dgx-spark-sglang:0.5.9-dev2-acab24a7-t5" ,
+    //image: "scitrera/dgx-spark-sglang:0.5.9-t5",
     extraEnv: [],
   },
   {
