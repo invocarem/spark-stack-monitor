@@ -317,15 +317,37 @@
               </label>
               <button type="button" id="btn-run" class="btn primary">Run</button>
             </div>
+            <div id="field-pipe-probe" class="row hidden">
+              <label class="field field-grow">
+                <span>Pipeline A (writes to pipe)</span>
+                <input
+                  type="text"
+                  id="input-pipe-left"
+                  autocomplete="off"
+                  placeholder="e.g. env, ibv_devinfo"
+                  aria-label="Pipeline command A"
+                />
+              </label>
+              <label class="field field-grow">
+                <span>Pipeline B (reads from pipe)</span>
+                <input
+                  type="text"
+                  id="input-pipe-right"
+                  autocomplete="off"
+                  placeholder="e.g. grep NC, head -50"
+                  aria-label="Pipeline command B"
+                />
+              </label>
+            </div>
             <label id="field-diag-command" class="field field-grow hidden">
               <span>Command (<code>bash -lc</code> inside container)</span>
-              <input
-                type="text"
+              <textarea
                 id="input-diag-command"
+                rows="3"
                 autocomplete="off"
                 placeholder="e.g. nvidia-smi"
                 aria-label="Diagnostics command"
-              />
+              ></textarea>
             </label>
             <p id="status-docker" class="status" aria-live="polite"></p>
           </section>

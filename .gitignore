@@ -8,6 +8,8 @@ dist/
 
 *.log
 *.swp
+*.backup
+
 
 # Python
 __pycache__/

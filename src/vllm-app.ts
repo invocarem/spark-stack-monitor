@@ -6,13 +6,20 @@ import { fetchVllmConfig } from "./vllm/vllm-config";
 
 const VLLM_CONTAINER = "vllm_node";
 const DEFAULT_TOOL_ID = "collect_env";
+const PIPE_PROBE_TOOL_ID = "pipe_probe";
 
 type VllmStackStatusBody =
   | { ok: true; state: "running"; container: string; image: string }
   | { ok: true; state: "stopped" | "missing"; container: string }
   | { ok: false; error: string };
 
-type ToolInfo = { id: string; label: string; description: string; format: "json" | "text" };
+type ToolInfo = {
+  id: string;
+  label: string;
+  description: string;
+  format: "json" | "text";
+  needsPipeline?: boolean;
+};
 
 type VllmMetricsOk = {
   ok: true;
@@ -54,6 +61,9 @@ const vllmRaw = document.querySelector<HTMLPreElement>("#vllm-raw");
 const chkVllmRaw = document.querySelector<HTMLInputElement>("#chk-vllm-raw");
 
 const selTool = document.querySelector<HTMLSelectElement>("#sel-vllm-tool");
+const fieldVllmPipeProbe = document.querySelector<HTMLDivElement>("#field-vllm-pipe-probe");
+const inputVllmPipeLeft = document.querySelector<HTMLInputElement>("#input-vllm-pipe-left");
+const inputVllmPipeRight = document.querySelector<HTMLInputElement>("#input-vllm-pipe-right");
 const btnToolRun = document.querySelector<HTMLButtonElement>("#btn-vllm-tool-run");
 const statusTool = document.querySelector<HTMLParagraphElement>("#status-vllm-tool");
 const toolOut = document.querySelector<HTMLPreElement>("#vllm-tool-out");
@@ -277,6 +287,11 @@ function normalizeProbeText(text: string): string {
   return text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
 }
 
+function syncVllmPipeProbeVisibility(): void {
+  const show = selTool?.value === PIPE_PROBE_TOOL_ID;
+  fieldVllmPipeProbe?.classList.toggle("hidden", !show);
+}
+
 function formatProbeResponse(body: Record<string, unknown>): string {
   if (typeof body.error === "string" && body.error) {
     return prettyJson(body);
@@ -309,6 +324,7 @@ async function loadTools(): Promise<void> {
       opt.value = DEFAULT_TOOL_ID;
       opt.textContent = "collect_env (fallback)";
       selTool.appendChild(opt);
+      syncVllmPipeProbeVisibility();
       return;
     }
     const tools = body.tools ?? [];
@@ -323,18 +339,28 @@ async function loadTools(): Promise<void> {
     if (tools.some((t) => t.id === DEFAULT_TOOL_ID)) {
       selTool.value = DEFAULT_TOOL_ID;
     }
+    syncVllmPipeProbeVisibility();
   } catch {
     selTool.innerHTML = "";
     const opt = document.createElement("option");
     opt.value = DEFAULT_TOOL_ID;
     opt.textContent = "collect_env (fallback)";
     selTool.appendChild(opt);
+    syncVllmPipeProbeVisibility();
   }
 }
 
 async function runTool(): Promise<void> {
   if (!toolOut || !selTool) return;
   const tool = selTool.value.trim() || DEFAULT_TOOL_ID;
+  if (tool === PIPE_PROBE_TOOL_ID) {
+    const left = inputVllmPipeLeft?.value.trim() ?? "";
+    const right = inputVllmPipeRight?.value.trim() ?? "";
+    if (!left || !right) {
+      setToolStatus("Enter both pipeline commands A and B.", true);
+      return;
+    }
+  }
   setToolStatus(`Running ${tool} in ${VLLM_CONTAINER}…`);
   if (btnToolRun) btnToolRun.disabled = true;
   try {
@@ -355,9 +381,13 @@ async function runTool(): Promise<void> {
       return;
     }
 
-    const res = await fetch(
-      `/api/probe?container=${encodeURIComponent(VLLM_CONTAINER)}&tool=${encodeURIComponent(tool)}`,
-    );
+    let probeUrl = `/api/probe?container=${encodeURIComponent(VLLM_CONTAINER)}&tool=${encodeURIComponent(tool)}`;
+    if (tool === PIPE_PROBE_TOOL_ID) {
+      const left = inputVllmPipeLeft?.value.trim() ?? "";
+      const right = inputVllmPipeRight?.value.trim() ?? "";
+      probeUrl += `&left=${encodeURIComponent(left)}&right=${encodeURIComponent(right)}`;
+    }
+    const res = await fetch(probeUrl);
     const body = (await res.json()) as Record<string, unknown>;
     let display = formatProbeResponse(body);
     if (
@@ -409,6 +439,9 @@ function init(): void {
 
   initMetricsBlock();
   void loadTools();
+  selTool?.addEventListener("change", () => {
+    syncVllmPipeProbeVisibility();
+  });
   btnToolRun?.addEventListener("click", () => void runTool());
 }
 

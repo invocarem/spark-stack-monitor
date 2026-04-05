@@ -167,13 +167,23 @@ export type DetachedBashLoggedToolMeta = {
   logPath: string;
 };
 
+/** Two user segments run as `bash -c "$A" | bash -c "$B"` (query params `left` & `right`). */
+export type PipeProbeToolMeta = {
+  id: "pipe_probe";
+  label: string;
+  description: string;
+  format: "text";
+  kind: "pipe_probe";
+};
+
 export type ToolMeta =
   | ExecToolMeta
   | DockerLogsToolMeta
   | DockerInspectToolMeta
   | ContainerStatsToolMeta
   | GpuLiveToolMeta
-  | DetachedBashLoggedToolMeta;
+  | DetachedBashLoggedToolMeta
+  | PipeProbeToolMeta;
 
 export const TOOLS: readonly ToolMeta[] = [
   {
@@ -259,6 +269,14 @@ export const TOOLS: readonly ToolMeta[] = [
     runner: "bash",
   },
   {
+    id: "pipe_probe",
+    label: "Pipeline (A | B)",
+    description:
+      "Container: two commands piped — A e.g. env, ibv_devinfo; B e.g. grep NC, head -20 (same safety as Diagnostics)",
+    format: "text",
+    kind: "pipe_probe",
+  },
+  {
     id: "vllm_launch_serve",
     label: "vLLM: launch serve.sh (detached)",
     description:
@@ -327,6 +345,34 @@ async function dockerContainerStats(container: string): Promise<DockerResult> {
     "table {{.Container}}\t{{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.MemPerc}}\t{{.NetIO}}\t{{.BlockIO}}\t{{.PIDs}}",
     container,
   ]);
+}
+
+/** Max length of each side of `A | B` (combined must stay within diagnostics limits). */
+const PIPE_SEGMENT_MAX = 990;
+
+/** Validates left/right for pipe_probe; each side + combined string must pass diagnostics policy. */
+export function validatePipelineSegments(left: string, right: string): string | null {
+  const l = left.trim();
+  const r = right.trim();
+  if (!l) return "Missing left command (A)";
+  if (!r) return "Missing right command (B)";
+  if (l.length > PIPE_SEGMENT_MAX || r.length > PIPE_SEGMENT_MAX) {
+    return `Each command must be at most ${PIPE_SEGMENT_MAX} characters`;
+  }
+  if (/[\n\r\0]/.test(l) || /[\n\r\0]/.test(r)) {
+    return "Commands must not contain newlines or null bytes";
+  }
+  const combined = `${l} | ${r}`;
+  for (const part of [l, r, combined]) {
+    const err = validateDiagnosticsCommand(part);
+    if (err) return err;
+  }
+  return null;
+}
+
+async function dockerPipelineProbe(container: string, left: string, right: string): Promise<DockerResult> {
+  const script = 'set -o pipefail; bash -c "$1" | bash -c "$2"';
+  return runDocker(["exec", "-i", container, "bash", "-lc", script, "_", left, right]);
 }
 
 /** One-shot live GPU metrics from inside the container. */
@@ -462,14 +508,30 @@ export async function runDiagnosticsInContainer(
   });
 }
 
+export type RunToolInContainerOptions = {
+  /** Required when `toolId` is `pipe_probe` (from `/api/probe?left=&right=`). */
+  pipeLeft?: string;
+  pipeRight?: string;
+};
+
 export async function runToolInContainer(
   container: string,
   toolId: string,
+  options?: RunToolInContainerOptions,
 ): Promise<DockerResult> {
   assertSafeContainerName(container);
   const meta = getToolMeta(toolId);
   if (!meta) {
     throw new Error(`Unknown tool: ${toolId}`);
+  }
+  if ("kind" in meta && meta.kind === "pipe_probe") {
+    const l = options?.pipeLeft ?? "";
+    const r = options?.pipeRight ?? "";
+    const blocked = validatePipelineSegments(l, r);
+    if (blocked) {
+      throw new Error(blocked);
+    }
+    return dockerPipelineProbe(container, l.trim(), r.trim());
   }
   if ("kind" in meta && meta.kind === "docker_logs") {
     return runDocker(["logs", "--tail", String(meta.tailLines), container]);

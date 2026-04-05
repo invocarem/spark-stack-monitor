@@ -87,9 +87,23 @@ export function getLaunchClusterDefaultsFromEnv(): LaunchClusterDefaultsResponse
  * Mirrors `run_master.sh` / `run_worker.sh` NCCL and distributed settings; per-host values come from env
  * (e.g. `NCCL_IB_DISABLE=1` on worker, `0` on head).
  */
+/** Same truthiness as `applyCluster` in `getLaunchClusterDefaultsFromEnv` (non-empty is not enough). */
 export function shouldInjectSglangStackClusterDockerEnv(): boolean {
   const raw = process.env.MONITOR_CLUSTER_APPLY?.trim();
-  return Boolean(raw && raw.length > 0);
+  if (!raw) return false;
+  const f = raw.toLowerCase();
+  if (f === "0" || f === "false" || f === "no") return false;
+  return true;
+}
+
+/**
+ * Extra SGLang stack `docker run` runtime flags (`--network host`, `--privileged`, IB mount, memlock).
+ * Set `MONITOR_STACK_SGLANG_CLUSTER_RUNTIME=1` to enable without `MONITOR_CLUSTER_APPLY` (e.g. worker uses its own env files).
+ */
+export function shouldUseSglangClusterDockerRuntime(): boolean {
+  const rt = process.env.MONITOR_STACK_SGLANG_CLUSTER_RUNTIME?.trim().toLowerCase();
+  if (rt === "1" || rt === "true" || rt === "yes") return true;
+  return shouldInjectSglangStackClusterDockerEnv();
 }
 
 export function getSglangStackDockerEnvForClusterRun(): Record<string, string> {
@@ -106,6 +120,17 @@ export function getSglangStackDockerEnvForClusterRun(): Record<string, string> {
       process.env.MONITOR_CLUSTER_NCCL_SOCKET_IFNAME,
       process.env.NCCL_SOCKET_IFNAME,
     ),
+  );
+  put(
+    "GLOO_SOCKET_IFNAME",
+    pick(
+      process.env.MONITOR_CLUSTER_GLOO_SOCKET_IFNAME,
+      process.env.GLOO_SOCKET_IFNAME,
+    ),
+  );
+  put(
+    "NCCL_IB_HCA",
+    pick(process.env.MONITOR_CLUSTER_NCCL_IB_HCA, process.env.NCCL_IB_HCA),
   );
   put("NCCL_DEBUG", process.env.NCCL_DEBUG ?? "");
   put(

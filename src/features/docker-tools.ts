@@ -19,6 +19,7 @@ type ToolInfo = {
   label: string;
   description: string;
   format: "json" | "text";
+  needsPipeline?: boolean;
 };
 
 type DiagnosticsPreset = {
@@ -29,6 +30,7 @@ type DiagnosticsPreset = {
 
 const DEFAULT_TOOL_ID = "collect_env";
 const TOOL_LAUNCH_LOG_200 = "launch_log_200";
+const PIPE_PROBE_TOOL_ID = "pipe_probe";
 const DEFAULT_DIAGNOSTICS_TIMEOUT_MS = 15000;
 
 const DIAGNOSTICS_PRESETS: readonly DiagnosticsPreset[] = [
@@ -84,11 +86,14 @@ const selTool = document.querySelector<HTMLSelectElement>("#sel-tool");
 const selMode = document.querySelector<HTMLSelectElement>("#sel-diagnostics-mode");
 const selDiagPreset = document.querySelector<HTMLSelectElement>("#sel-diag-preset");
 const selDiagTimeout = document.querySelector<HTMLSelectElement>("#sel-diag-timeout");
-const inputDiagCommand = document.querySelector<HTMLInputElement>("#input-diag-command");
+const inputDiagCommand = document.querySelector<HTMLTextAreaElement>("#input-diag-command");
 const fieldToolSelect = document.querySelector<HTMLLabelElement>("#field-tool-select");
 const fieldDiagPreset = document.querySelector<HTMLLabelElement>("#field-diag-preset");
 const fieldDiagCommand = document.querySelector<HTMLLabelElement>("#field-diag-command");
 const fieldDiagTimeout = document.querySelector<HTMLLabelElement>("#field-diag-timeout");
+const fieldPipeProbe = document.querySelector<HTMLDivElement>("#field-pipe-probe");
+const inputPipeLeft = document.querySelector<HTMLInputElement>("#input-pipe-left");
+const inputPipeRight = document.querySelector<HTMLInputElement>("#input-pipe-right");
 const btnRun = document.querySelector<HTMLButtonElement>("#btn-run");
 const containerField = document.querySelector<HTMLDivElement>("#docker-container-field");
 const statusDocker = document.querySelector<HTMLParagraphElement>("#status-docker");
@@ -119,8 +124,18 @@ function setDiagnosticsUIVisibility(enabled: boolean): void {
   fieldDiagPreset?.classList.toggle("hidden", !enabled);
   fieldDiagCommand?.classList.toggle("hidden", !enabled);
   fieldDiagTimeout?.classList.toggle("hidden", !enabled);
+  if (!enabled) {
+    syncPipeProbeVisibility();
+  } else {
+    fieldPipeProbe?.classList.add("hidden");
+  }
   if (!btnRun) return;
   btnRun.textContent = enabled ? "Run diagnostics" : "Run";
+}
+
+function syncPipeProbeVisibility(): void {
+  const show = !isDiagnosticsMode() && selTool?.value === PIPE_PROBE_TOOL_ID;
+  fieldPipeProbe?.classList.toggle("hidden", !show);
 }
 
 function formatProbeResponse(body: Record<string, unknown>): string {
@@ -157,6 +172,7 @@ async function loadTools(): Promise<void> {
         opt.textContent = `Fallback: ${t.text}`;
         selTool.appendChild(opt);
       }
+      syncPipeProbeVisibility();
       return;
     }
     const tools = body.tools ?? [];
@@ -172,6 +188,7 @@ async function loadTools(): Promise<void> {
       selTool.appendChild(opt);
     }
     selTool.value = TOOL_LAUNCH_LOG_200;
+    syncPipeProbeVisibility();
   } catch {
     selTool.innerHTML = "";
     const launchOpt = document.createElement("option");
@@ -184,6 +201,7 @@ async function loadTools(): Promise<void> {
       opt.textContent = t.text;
       selTool.appendChild(opt);
     }
+    syncPipeProbeVisibility();
   }
 }
 
@@ -333,6 +351,14 @@ async function runTool(): Promise<void> {
   }
 
   const tool = selTool.value.trim() || DEFAULT_TOOL_ID;
+  if (tool === PIPE_PROBE_TOOL_ID) {
+    const left = inputPipeLeft?.value.trim() ?? "";
+    const right = inputPipeRight?.value.trim() ?? "";
+    if (!left || !right) {
+      setDockerStatus("Enter both pipeline commands A and B (e.g. A=env, B=grep NC).", true);
+      return;
+    }
+  }
   setDockerStatus(
     tool === TOOL_LAUNCH_LOG_200
       ? `Loading launch script log in ${container}…`
@@ -371,9 +397,13 @@ async function runTool(): Promise<void> {
       return;
     }
 
-    const res = await fetch(
-      `/api/probe?container=${encodeURIComponent(container)}&tool=${encodeURIComponent(tool)}`,
-    );
+    let probeUrl = `/api/probe?container=${encodeURIComponent(container)}&tool=${encodeURIComponent(tool)}`;
+    if (tool === PIPE_PROBE_TOOL_ID) {
+      const left = inputPipeLeft?.value.trim() ?? "";
+      const right = inputPipeRight?.value.trim() ?? "";
+      probeUrl += `&left=${encodeURIComponent(left)}&right=${encodeURIComponent(right)}`;
+    }
+    const res = await fetch(probeUrl);
     const body = (await res.json()) as Record<string, unknown>;
     let display = formatProbeResponse(body);
     if (
@@ -407,6 +437,9 @@ async function runTool(): Promise<void> {
 
 export function initDockerTools(): void {
   btnRun?.addEventListener("click", () => void runTool());
+  selTool?.addEventListener("change", () => {
+    syncPipeProbeVisibility();
+  });
   selMode?.addEventListener("change", () => {
     const diagnostics = isDiagnosticsMode();
     setDiagnosticsUIVisibility(diagnostics);

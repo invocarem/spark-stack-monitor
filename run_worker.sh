@@ -7,6 +7,8 @@ docker run --gpus all \
     --env "HF_TOKEN=$HF_TOKEN" \
     --env "CUDA_VISIBLE_DEVICES=0" \
     --env "NCCL_SOCKET_IFNAME=enp1s0f0np0" \
+    --env "GLOO_SOCKET_IFNAME=enp1s0f0np0" \
+    --env "NCCL_IB_HCA=rocep1s0f0" \
     --env "NCCL_DEBUG=INFO" \
     --env "NCCL_IB_DISABLE=1" \
     --env "NCCL_ASYNC_ERROR_HANDLING=1" \

@@ -97,6 +97,28 @@
             </label>
             <button type="button" id="btn-vllm-tool-run" class="btn primary">Run</button>
           </div>
+          <div id="field-vllm-pipe-probe" class="row hidden">
+            <label class="field field-grow">
+              <span>Pipeline A</span>
+              <input
+                type="text"
+                id="input-vllm-pipe-left"
+                autocomplete="off"
+                placeholder="e.g. env, ibv_devinfo"
+                aria-label="Pipeline command A"
+              />
+            </label>
+            <label class="field field-grow">
+              <span>Pipeline B</span>
+              <input
+                type="text"
+                id="input-vllm-pipe-right"
+                autocomplete="off"
+                placeholder="e.g. grep NC"
+                aria-label="Pipeline command B"
+              />
+            </label>
+          </div>
           <p id="status-vllm-tool" class="status" aria-live="polite"></p>
           <pre id="vllm-tool-out" class="out out-short" aria-live="polite">—</pre>
         </section>

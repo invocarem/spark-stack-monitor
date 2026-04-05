@@ -5,6 +5,7 @@ import {
   assertSafeContainerName,
   runDiagnosticsInContainer,
   validateDiagnosticsCommand,
+  validatePipelineSegments,
   TOOLS,
   DEFAULT_TOOL_ID,
   getToolMeta,
@@ -46,6 +47,7 @@ export function registerCoreRoutes(app: Hono): void {
         label: t.label,
         description: t.description,
         format: t.format,
+        needsPipeline: "kind" in t && t.kind === "pipe_probe",
       })),
     }),
   );
@@ -148,9 +150,35 @@ export function registerCoreRoutes(app: Hono): void {
       );
     }
 
+    let pipeLeft: string | undefined;
+    let pipeRight: string | undefined;
+    if ("kind" in meta && meta.kind === "pipe_probe") {
+      const left = c.req.query("left") ?? "";
+      const right = c.req.query("right") ?? "";
+      const blocked = validatePipelineSegments(left, right);
+      if (blocked) {
+        return c.json(
+          {
+            error: blocked,
+            tool: toolParam,
+            hint: "Add query parameters left= and right= (e.g. left=env&right=grep+NC)",
+          },
+          400,
+        );
+      }
+      pipeLeft = left.trim();
+      pipeRight = right.trim();
+    }
+
     let result;
     try {
-      result = await runToolInContainer(container, toolParam);
+      result = await runToolInContainer(
+        container,
+        toolParam,
+        pipeLeft !== undefined && pipeRight !== undefined
+          ? { pipeLeft, pipeRight }
+          : undefined,
+      );
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       return c.json({ error: message }, 400);

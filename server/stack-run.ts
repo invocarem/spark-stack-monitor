@@ -2,18 +2,22 @@
  * Whitelisted `docker run` presets for the stack dev container (host API).
  * Each preset mirrors the flags in repo `containers/sglang/run-docker.sh` and
  * `containers/sglang/run-docker-openai.sh` (GPU, shm, port, mounts, env, image, name).
+ * Multi-node: `MONITOR_CLUSTER_APPLY` or `MONITOR_STACK_SGLANG_CLUSTER_RUNTIME=1` adds
+ * `--network host`, `--privileged`, optional `/dev/infiniband`, `memlock` ulimit; see `launch-cluster-defaults.ts`.
  * The monitor uses `docker run -d` with `sleep infinity` instead of `-it … bash` so
  * the process works without a TTY and the Launch tab can `docker exec`.
  *
  * vLLM testing lives on a separate page; see `vllm-stack.ts`.
  */
 
+import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { assertSafeContainerName, dockerHost } from "./docker.js";
 import {
   getSglangStackDockerEnvForClusterRun,
   shouldInjectSglangStackClusterDockerEnv,
+  shouldUseSglangClusterDockerRuntime,
 } from "./launch-cluster-defaults.js";
 import { findRepoRoot } from "./repo-root.js";
 
@@ -41,15 +45,6 @@ export const STACK_PRESETS: readonly StackPreset[] = [
     image: "scitrera/dgx-spark-sglang:0.5.9-dev2-acab24a7-t5" ,
     //image: "scitrera/dgx-spark-sglang:0.5.9-t5",
     extraEnv: [],
-  },
-  {
-    id: "dgx_spark_tf5_10",
-    label: "SciTrera DGX Spark SGLang (tf5 10)",
-    provider: "sglang",
-    matchesScript: "containers/sglang/run-docker.sh",
-    containerName: "sglang_node_tf5_10",
-    image: "scitrera/dgx-spark-sglang:0.5.10rc0",
-    extraEnv: ["SGLANG_ENABLE_SPEC_V2=1"],
   },
   {
     id: "lmsys_spark",
@@ -171,18 +166,24 @@ export async function runStackPreset(presetId: string): Promise<RunStackResult> 
 
   const clusterStackEnv =
     preset.provider === "sglang" && shouldInjectSglangStackClusterDockerEnv();
+  const clusterRuntime =
+    preset.provider === "sglang" && shouldUseSglangClusterDockerRuntime();
 
   const args: string[] = ["run", "-d", "--gpus", "all"];
-  if (clusterStackEnv) {
+  if (clusterRuntime) {
     args.push("--network", "host");
+    args.push("--privileged");
+    if (fs.existsSync("/dev/infiniband")) {
+      args.push("-v", "/dev/infiniband:/dev/infiniband");
+    }
+    args.push("--ulimit", "memlock=-1:-1");
   }
   args.push(
     "--name",
     preset.containerName,
     "--shm-size",
     shm,
-    "-p",
-    `${hostPublish}:${containerPublish}`,
+    ...(clusterRuntime ? [] : ["-p", `${hostPublish}:${containerPublish}`]),
     "-v",
     `${hfCache}:/root/.cache/huggingface`,
     "-v",
@@ -218,7 +219,7 @@ export async function runStackPreset(presetId: string): Promise<RunStackResult> 
     ok: true,
     container: preset.containerName,
     started: true,
-    message: `Created and started ${preset.containerName} (same flags as ${preset.matchesScript}; monitor uses sleep infinity).${clusterStackEnv ? " Cluster `.env` NCCL/distributed env and --network host applied." : ""} Host port ${hostPublish}→${containerPublish}; repo at /workspace.`,
+    message: `Created and started ${preset.containerName} (same flags as ${preset.matchesScript}; monitor uses sleep infinity).${clusterStackEnv ? " Cluster `.env` NCCL/distributed env applied." : ""}${clusterRuntime ? " Cluster runtime: --network host, --privileged, memlock; /dev/infiniband mounted when present on host." : ""} ${clusterRuntime ? `Host network mode (service port ${containerPublish}).` : `Published ${hostPublish}→${containerPublish}.`} Repo at /workspace.`,
   };
 }
 
