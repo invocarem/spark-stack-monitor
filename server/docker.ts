@@ -244,6 +244,15 @@ export const TOOLS: readonly ToolMeta[] = [
     runner: "python3",
   },
   {
+    id: "chat_no_thinking",
+    label: "chat_no_thinking.py",
+    description:
+      "POST /v1/chat/completions with chat_template_kwargs.enable_thinking=false and separate_reasoning=false (Qwen3 smoke test; SGLANG_BASE_URL / CHAT_BASE_URL / CHAT_MODEL)",
+    format: "json",
+    path: `${WORKSPACE_TOOLS}/chat_no_thinking.py`,
+    runner: "python3",
+  },
+  {
     id: "task_benchmark",
     label: "task_benchmark.py",
     description:
@@ -306,14 +315,37 @@ function looksLikePython3Missing(result: DockerResult): boolean {
   );
 }
 
+/** Forward monitor-host OpenAI/SGLang URL and model env into `docker exec` so Tools scripts match dashboard `.env`. */
+function dockerExecToolEnvArgs(): string[] {
+  const keys = [
+    "SGLANG_BASE_URL",
+    "CHAT_BASE_URL",
+    "BENCHMARK_BASE_URL",
+    "CHAT_MODEL",
+    "CHAT_SERVED_MODEL",
+    "BENCHMARK_SERVED_MODEL",
+    "BENCHMARK_MODEL",
+    "CHAT_FALLBACK_MODEL",
+  ] as const;
+  const out: string[] = [];
+  for (const k of keys) {
+    const v = process.env[k];
+    if (v !== undefined && v !== "" && !/[\n\r\0]/.test(v)) {
+      out.push("-e", `${k}=${v}`);
+    }
+  }
+  return out;
+}
+
 async function execPythonScript(
   container: string,
   scriptPath: string,
 ): Promise<DockerResult> {
-  const try3 = await runDocker(["exec", container, "python3", scriptPath]);
+  const envArgs = dockerExecToolEnvArgs();
+  const try3 = await runDocker(["exec", ...envArgs, container, "python3", scriptPath]);
   if (try3.code === 0) return try3;
   if (looksLikePython3Missing(try3)) {
-    return runDocker(["exec", container, "python", scriptPath]);
+    return runDocker(["exec", ...envArgs, container, "python", scriptPath]);
   }
   return try3;
 }
