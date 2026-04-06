@@ -4,7 +4,7 @@
 MODEL="Qwen/Qwen3.5-397B-A17B-GPTQ-Int4"
 SERVED_MODEL_NAME="qwen3.5-397b"
 CONTEXT_LENGTH=32768
-MEM_FRACTION_STATIC=0.95
+MEM_FRACTION_STATIC=0.93
 TENSOR_PARALLEL=2
 HOST="0.0.0.0"
 PORT=30000
@@ -22,7 +22,10 @@ SGLANG_USE_AITER=1 python3 -m sglang.launch_server \
     --port ${PORT} \
     --enable-metrics \
     --attention-backend ${ATTENTION_BACKEND} \
+    --moe-runner-backend flashinfer_cutlass \
     --fp8-gemm-backend ${FP8_GEMM_BACKEND} \
+    --disable-cuda-graph \
+    --disable-radix-cache \
     --tool-call-parser ${TOOL_CALL_PARSER} \
     --reasoning-parser qwen3 \
     --mamba-scheduler-strategy no_buffer \
@@ -30,4 +33,5 @@ SGLANG_USE_AITER=1 python3 -m sglang.launch_server \
     --kv-cache-dtype fp8_e4m3 \
     --max-running-requests 3 \
     --enable-cache-report \
+    --preferred-sampling-params '{"temperature":0.6,"top_p":0.95,"top_k":20,"min_p":0.0,"presence_penalty":0.0,"repetition_penalty":1.0}' \
     --trust-remote-code
