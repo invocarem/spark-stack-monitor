@@ -4,7 +4,7 @@
 MODEL="Qwen/Qwen3.5-397B-A17B-GPTQ-Int4"
 SERVED_MODEL_NAME="qwen3.5-397b"
 CONTEXT_LENGTH=32768
-MEM_FRACTION_STATIC=0.94
+MEM_FRACTION_STATIC=0.95
 TENSOR_PARALLEL=2
 HOST="0.0.0.0"
 PORT=30000
@@ -25,8 +25,9 @@ SGLANG_USE_AITER=1 python3 -m sglang.launch_server \
     --fp8-gemm-backend ${FP8_GEMM_BACKEND} \
     --tool-call-parser ${TOOL_CALL_PARSER} \
     --reasoning-parser qwen3 \
-    --mamba-scheduler-strategy extra_buffer \
+    --mamba-scheduler-strategy no_buffer \
     --quantization moe_wna16 \
     --kv-cache-dtype fp8_e4m3 \
+    --max-running-requests 3 \
     --enable-cache-report \
     --trust-remote-code
