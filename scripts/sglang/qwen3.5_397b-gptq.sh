@@ -26,11 +26,7 @@ SGLANG_USE_AITER=1 python3 -m sglang.launch_server \
     --tool-call-parser ${TOOL_CALL_PARSER} \
     --reasoning-parser qwen3 \
     --mamba-scheduler-strategy extra_buffer \
-    --speculative-algo NEXTN \
-    --speculative-num-steps 2 \
-    --speculative-eagle-topk 1 \
-    --speculative-num-draft-tokens 2 \
     --quantization moe_wna16 \
-    --kv-cache-dtype bf16 \
+    --kv-cache-dtype fp8_e4m3 \
     --enable-cache-report \
     --trust-remote-code
