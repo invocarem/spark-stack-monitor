@@ -3,13 +3,12 @@
 # Configuration variables
 MODEL="Qwen/Qwen3.5-397B-A17B-GPTQ-Int4"
 SERVED_MODEL_NAME="qwen3.5-397b"
-CONTEXT_LENGTH=32768
+CONTEXT_LENGTH=65536
 MEM_FRACTION_STATIC=0.93
 TENSOR_PARALLEL=2
 HOST="0.0.0.0"
 PORT=30000
 ATTENTION_BACKEND="triton"
-FP8_GEMM_BACKEND="cutlass"
 TOOL_CALL_PARSER="qwen3_coder"
 
 SGLANG_USE_AITER=1 python3 -m sglang.launch_server \
@@ -22,12 +21,15 @@ SGLANG_USE_AITER=1 python3 -m sglang.launch_server \
     --port ${PORT} \
     --enable-metrics \
     --attention-backend ${ATTENTION_BACKEND} \
-    --moe-runner-backend triton \
-    --fp8-gemm-backend ${FP8_GEMM_BACKEND} \
     --disable-cuda-graph \
     --disable-radix-cache \
     --tool-call-parser ${TOOL_CALL_PARSER} \
     --reasoning-parser qwen3 \
+    --speculative-algorithm EAGLE \
+    --speculative-num-steps 3 \
+    --speculative-eagle-topk 1 \
+    --speculative-num-draft-tokens 4 \
+    --enable-flashinfer-allreduce-fusion \
     --mamba-scheduler-strategy no_buffer \
     --quantization moe_wna16 \
     --kv-cache-dtype fp8_e4m3 \

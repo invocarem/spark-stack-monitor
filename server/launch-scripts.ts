@@ -190,7 +190,9 @@ function injectMissingArgsIntoRenderedLines(
     for (let j = 0; j < missing.length; j += 1) {
       const m = missing[j]!;
       const isLast = j === missing.length - 1;
-      insertedLines.push(`${baseIndent}${m.key} ${m.value}${isLast ? "" : " \\"}`);
+      insertedLines.push(
+        `${baseIndent}${m.key} ${quoteLaunchArgValue(m.value)}${isLast ? "" : " \\"}`,
+      );
     }
     return [...updated.slice(0, start), lineWithSlash, ...insertedLines, ...updated.slice(start + 1)];
   }
@@ -208,7 +210,7 @@ function injectMissingArgsIntoRenderedLines(
   for (let j = 0; j < missing.length; j += 1) {
     const m = missing[j]!;
     const isLast = j === missing.length - 1;
-    newMiddle.push(`${indent}${m.key} ${m.value}${isLast ? "" : " \\"}`);
+    newMiddle.push(`${indent}${m.key} ${quoteLaunchArgValue(m.value)}${isLast ? "" : " \\"}`);
   }
 
   return [...prefix, lastWithSlash, ...newMiddle, ...suffix];
@@ -219,6 +221,20 @@ const LAUNCH_ENV_KEY_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
 function shSingleQuoteForExport(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
+function quoteLaunchArgValue(value: string): string {
+  if (!value.length) return value;
+  // Respect explicit shell quoting from the script/UI.
+  if (
+    (value.startsWith("'") && value.endsWith("'")) ||
+    (value.startsWith('"') && value.endsWith('"'))
+  ) {
+    return value;
+  }
+  // Keep simple token values readable; quote anything shell-sensitive (JSON, spaces, etc.).
+  if (/^[A-Za-z0-9_./:@%+=,-]+$/.test(value)) return value;
+  return shSingleQuoteForExport(value);
 }
 
 /**
@@ -300,8 +316,8 @@ function parseLaunchArgsFromScriptText(scriptText: string): LaunchArgPair[] {
     /"([^"\\]*(?:\\.[^"\\]*)*)"|'([^'\\]*(?:\\.[^'\\]*)*)'|(\$\{[A-Za-z_][A-Za-z0-9_]*\}|\S+)/g;
   const tokens: string[] = [];
   for (const m of launchText.matchAll(tokenRe)) {
-    const quoted = m[1] ?? m[2] ?? m[3] ?? "";
-    if (quoted) tokens.push(quoted);
+    const token = m[0] ?? "";
+    if (token) tokens.push(token);
   }
   for (let i = 0; i < tokens.length; i += 1) {
     const token = tokens[i] ?? "";
@@ -580,7 +596,7 @@ export async function runLaunchScriptInContainer(
       if (!ov.enabled) return [];
       const indent = m[1] ?? "";
       const hasSlash = rawLine.trimEnd().endsWith("\\");
-      return [`${indent}${ov.key} ${ov.value}${hasSlash ? " \\" : ""}`];
+      return [`${indent}${ov.key} ${quoteLaunchArgValue(ov.value)}${hasSlash ? " \\" : ""}`];
     });
     const missing = missingEnabledArgOverrides(lines, argOverrides, byKey);
     const finalLines = injectMissingArgsIntoRenderedLines(updated, missing, provider);
