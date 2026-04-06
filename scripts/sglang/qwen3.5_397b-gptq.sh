@@ -22,7 +22,7 @@ SGLANG_USE_AITER=1 python3 -m sglang.launch_server \
     --port ${PORT} \
     --enable-metrics \
     --attention-backend ${ATTENTION_BACKEND} \
-    --moe-runner-backend flashinfer_cutlass \
+    --moe-runner-backend triton \
     --fp8-gemm-backend ${FP8_GEMM_BACKEND} \
     --disable-cuda-graph \
     --disable-radix-cache \
