@@ -35,5 +35,6 @@ SGLANG_USE_AITER=1 python3 -m sglang.launch_server \
     --kv-cache-dtype fp8_e4m3 \
     --max-running-requests 3 \
     --enable-cache-report \
+    --default-chat-template-kwargs '{"enable_thinking": false}' \
     --preferred-sampling-params '{"temperature":0.6,"top_p":0.95,"top_k":20,"min_p":0.0,"presence_penalty":0.0,"repetition_penalty":1.0}' \
     --trust-remote-code

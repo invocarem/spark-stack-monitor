@@ -3,6 +3,10 @@
  *
  * The HTTP response returns only after every scheduled request finishes (or times out server-side).
  * Console stays quiet until then — use Network → POST …/benchmark (pending).
+ *
+ * Server defaults (when max tokens field is empty): `max_tokens` 256 and, for SGLang,
+ * `separate_reasoning: false` plus `chat_template_kwargs.enable_thinking: false` (Qwen3) so load
+ * tests do not spend tens of seconds on visible “thinking” text. Opt out with BENCHMARK_PRESERVE_* env.
  */
 
 import { getMonitorProvider, withProviderHeaders, withProviderQuery } from "../app/provider";

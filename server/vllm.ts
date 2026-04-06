@@ -1,5 +1,7 @@
 /** vLLM test: Prometheus metrics + OpenAI-compatible base URL (host-published port). */
 
+import { benchmarkDefaultMaxTokens } from "./benchmark-defaults.js";
+
 const DEFAULT_BASE = process.env.VLLM_BASE_URL ?? "http://127.0.0.1:8000";
 const METRICS_PATH = process.env.VLLM_METRICS_PATH ?? "/metrics";
 const FETCH_TIMEOUT_MS = Number(process.env.VLLM_FETCH_TIMEOUT_MS ?? "8000");
@@ -350,10 +352,11 @@ export async function runVllmBenchmark(
 
   const model = body.model.trim();
   const message = body.message.trim();
-  const max_tokens = body.max_tokens;
+  const max_tokens =
+    body.max_tokens !== undefined ? Math.floor(body.max_tokens) : benchmarkDefaultMaxTokens();
 
   console.log(
-    `[benchmark-vllm] start model=${JSON.stringify(model)} requests=${requests} concurrency=${concurrency} max_tokens=${max_tokens ?? "default"} -> ${getVllmBaseUrl()}`,
+    `[benchmark-vllm] start model=${JSON.stringify(model)} requests=${requests} concurrency=${concurrency} max_tokens=${max_tokens} -> ${getVllmBaseUrl()}`,
   );
 
   const latenciesMs: number[] = [];
@@ -373,7 +376,7 @@ export async function runVllmBenchmark(
       const payload = {
         model,
         messages: [{ role: "user" as const, content: message }],
-        ...(max_tokens !== undefined ? { max_tokens } : {}),
+        max_tokens,
       };
 
       const t0 = Date.now();

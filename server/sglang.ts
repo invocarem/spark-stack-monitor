@@ -1,6 +1,11 @@
 /** Fetch Prometheus metrics from the SGLang HTTP server (host-published port). */
 
 import { assistantFromCompletionBody } from "../lib/openai-completion-text.js";
+import {
+  benchmarkDefaultMaxTokens,
+  benchmarkPreserveSeparateReasoning,
+  benchmarkPreserveThinking,
+} from "./benchmark-defaults.js";
 
 const DEFAULT_BASE = process.env.SGLANG_BASE_URL ?? "http://127.0.0.1:30000";
 const METRICS_PATH = process.env.SGLANG_METRICS_PATH ?? "/metrics";
@@ -90,18 +95,31 @@ function isChatMessage(x: unknown): x is ChatMessage {
   return typeof o.content === "string";
 }
 
+function isPlainObject(x: unknown): x is Record<string, unknown> {
+  return typeof x === "object" && x !== null && !Array.isArray(x);
+}
+
 function isChatRequestBody(x: unknown): x is {
   model: string;
   messages: ChatMessage[];
   temperature?: number;
   max_tokens?: number;
   top_p?: number;
+  separate_reasoning?: boolean;
+  chat_template_kwargs?: Record<string, unknown>;
 } {
   if (typeof x !== "object" || x === null) return false;
   const o = x as Record<string, unknown>;
   if (typeof o.model !== "string" || !o.model.trim()) return false;
   if (!Array.isArray(o.messages) || o.messages.length === 0) return false;
-  return o.messages.every(isChatMessage);
+  if (!o.messages.every(isChatMessage)) return false;
+  if (o.separate_reasoning !== undefined && typeof o.separate_reasoning !== "boolean") {
+    return false;
+  }
+  if (o.chat_template_kwargs !== undefined && !isPlainObject(o.chat_template_kwargs)) {
+    return false;
+  }
+  return true;
 }
 
 export type ChatProxyResult =
@@ -130,14 +148,20 @@ export async function forwardChatCompletions(
   }
 
   const url = new URL("/v1/chat/completions", `${base}/`);
-  const payload = {
+  const payload: Record<string, unknown> = {
     model: body.model.trim(),
     messages: body.messages,
-    stream: false as const,
+    stream: false,
     ...(typeof body.temperature === "number" ? { temperature: body.temperature } : {}),
     ...(typeof body.max_tokens === "number" ? { max_tokens: body.max_tokens } : {}),
     ...(typeof body.top_p === "number" ? { top_p: body.top_p } : {}),
   };
+  if (typeof body.separate_reasoning === "boolean") {
+    payload.separate_reasoning = body.separate_reasoning;
+  }
+  if (body.chat_template_kwargs !== undefined && isPlainObject(body.chat_template_kwargs)) {
+    payload.chat_template_kwargs = body.chat_template_kwargs;
+  }
 
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), CHAT_TIMEOUT_MS);
@@ -364,7 +388,10 @@ export async function runSglangBenchmark(
 
   const model = body.model.trim();
   const message = body.message.trim();
-  const max_tokens = body.max_tokens;
+  const max_tokens =
+    body.max_tokens !== undefined ? Math.floor(body.max_tokens) : benchmarkDefaultMaxTokens();
+  const injectSeparateReasoning = !benchmarkPreserveSeparateReasoning();
+  const injectThinkingOff = !benchmarkPreserveThinking();
 
   let benchmarkBase: string;
   try {
@@ -375,7 +402,7 @@ export async function runSglangBenchmark(
   }
 
   console.log(
-    `[benchmark] start model=${JSON.stringify(model)} requests=${requests} concurrency=${concurrency} max_tokens=${max_tokens ?? "default"} → ${benchmarkBase}`,
+    `[benchmark] start model=${JSON.stringify(model)} requests=${requests} concurrency=${concurrency} max_tokens=${max_tokens} separate_reasoning=${injectSeparateReasoning ? "false" : "(server default)"} enable_thinking=${injectThinkingOff ? "false (chat_template_kwargs)" : "(server default)"} → ${benchmarkBase}`,
   );
 
   const latenciesMs: number[] = [];
@@ -395,7 +422,11 @@ export async function runSglangBenchmark(
       const payload = {
         model,
         messages: [{ role: "user" as const, content: message }],
-        ...(max_tokens !== undefined ? { max_tokens } : {}),
+        max_tokens,
+        ...(injectSeparateReasoning ? { separate_reasoning: false as const } : {}),
+        ...(injectThinkingOff
+          ? { chat_template_kwargs: { enable_thinking: false } as const }
+          : {}),
       };
 
       const t0 = Date.now();

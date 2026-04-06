@@ -238,7 +238,7 @@ export const TOOLS: readonly ToolMeta[] = [
     id: "benchmark",
     label: "benchmark.py",
     description:
-      "Runs `python3 -m sglang.bench_serving` (sets HF --model + --served-model-name; BENCHMARK_TOKENIZER default Qwen2.5-0.5B-Instruct)",
+      "Runs `python3 -m sglang.bench_serving` (HF --model + --served-model-name; injects separate_reasoning:false and chat_template enable_thinking:false unless BENCHMARK_PRESERVE_*). Dashboard /api/benchmark uses the same defaults (BENCHMARK_DEFAULT_MAX_TOKENS=256).",
     format: "text",
     path: `${WORKSPACE_TOOLS}/benchmark.py`,
     runner: "python3",
