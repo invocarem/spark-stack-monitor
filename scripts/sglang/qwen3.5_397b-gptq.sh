@@ -3,7 +3,7 @@
 # Configuration variables
 MODEL="Qwen/Qwen3.5-397B-A17B-GPTQ-Int4"
 SERVED_MODEL_NAME="qwen3.5-397b"
-CONTEXT_LENGTH=88000
+CONTEXT_LENGTH=65536
 MEM_FRACTION_STATIC=0.93
 TENSOR_PARALLEL=2
 HOST="0.0.0.0"
@@ -37,6 +37,7 @@ SGLANG_USE_AITER=1 python3 -m sglang.launch_server \
     --enable-flashinfer-allreduce-fusion \
     --mamba-scheduler-strategy no_buffer \
     --disable-radix-cache \
+    --disable-cuda-graph  \
     --quantization moe_wna16 \
     --kv-cache-dtype fp8_e4m3 \
     --max-running-requests 3 \
