@@ -25,17 +25,18 @@ SGLANG_USE_AITER=1 python3 -m sglang.launch_server \
     --host ${HOST} \
     --port ${PORT} \
     --enable-metrics \
+    --watchdog-timeout 1200 \
+    --model-loader-extra-config '{"enable_multithread_load": true}' \
     --attention-backend ${ATTENTION_BACKEND} \
     --tool-call-parser ${TOOL_CALL_PARSER} \
     --reasoning-parser qwen3 \
-    --speculative-algorithm EAGLE \
+    --speculative-algorithm EAGLE3 \
     --speculative-num-steps 3 \
     --speculative-eagle-topk 1 \
     --speculative-num-draft-tokens 4 \
     --enable-flashinfer-allreduce-fusion \
     --mamba-scheduler-strategy no_buffer \
     --disable-radix-cache \
-    --disable-cuda-graph \
     --quantization moe_wna16 \
     --kv-cache-dtype fp8_e4m3 \
     --max-running-requests 3 \
