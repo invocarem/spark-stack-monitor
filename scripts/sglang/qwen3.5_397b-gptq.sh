@@ -3,13 +3,18 @@
 # Configuration variables
 MODEL="Qwen/Qwen3.5-397B-A17B-GPTQ-Int4"
 SERVED_MODEL_NAME="qwen3.5-397b"
-CONTEXT_LENGTH=84000
+CONTEXT_LENGTH=88000
 MEM_FRACTION_STATIC=0.93
 TENSOR_PARALLEL=2
 HOST="0.0.0.0"
 PORT=30000
 ATTENTION_BACKEND="triton"
 TOOL_CALL_PARSER="qwen3_coder"
+
+
+# --mamba-scheduler-strategy extra_buffer
+# Remove --disable-radix-cache (extra_buffer requires radix cache)
+# Remove --disable-cuda-graph (enable CUDA graphs)
 
 SGLANG_USE_AITER=1 python3 -m sglang.launch_server \
     --model-path ${MODEL} \
@@ -21,8 +26,6 @@ SGLANG_USE_AITER=1 python3 -m sglang.launch_server \
     --port ${PORT} \
     --enable-metrics \
     --attention-backend ${ATTENTION_BACKEND} \
-    --disable-cuda-graph \
-    --disable-radix-cache \
     --tool-call-parser ${TOOL_CALL_PARSER} \
     --reasoning-parser qwen3 \
     --speculative-algorithm EAGLE \
