@@ -33,7 +33,9 @@ SGLANG_USE_AITER=1 python3 -m sglang.launch_server \
     --speculative-eagle-topk 1 \
     --speculative-num-draft-tokens 4 \
     --enable-flashinfer-allreduce-fusion \
-    --mamba-scheduler-strategy extra_buffer \
+    --mamba-scheduler-strategy no_buffer \
+    --disable-radix-cache \
+    --disable-cuda-graph \
     --quantization moe_wna16 \
     --kv-cache-dtype fp8_e4m3 \
     --max-running-requests 3 \
