@@ -614,7 +614,7 @@ export async function runLaunchScriptInContainer(
     `(command -v script >/dev/null 2>&1 && script -qefc '${launchCommand}' - || sh -c '${launchCommand}') >> ${logPath} 2>&1`;
   const shellCmd = [
     `${envPrefix}mkdir -p /workspace/.monitor`,
-    `printf '%s\\n' "---- $(date -u +%Y-%m-%dT%H:%M:%SZ) starting ${scriptBasename} ----" >> ${logPath}`,
+    `printf '%s\\n' "---- $(date +%Y-%m-%dT%H:%M:%S%z) starting ${scriptBasename} ----" >> ${logPath}`,
     runScript,
   ].join(" && ");
   const { code, stderr } = await dockerExecDetached(container, ["sh", "-c", shellCmd]);

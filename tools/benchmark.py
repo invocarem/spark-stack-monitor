@@ -14,7 +14,7 @@ When used from **Docker / tools**, invoke with no args: served id is auto-detect
 Env (optional): BENCHMARK_BASE_URL, BENCHMARK_BACKEND, BENCHMARK_DATASET,
 BENCHMARK_NUM_PROMPTS, BENCHMARK_RANDOM_INPUT_LEN, BENCHMARK_RANDOM_OUTPUT_LEN,
 BENCHMARK_SERVED_MODEL (API id), BENCHMARK_HF_MODEL (HF repo for bench ``--model``),
-BENCHMARK_TOKENIZER (defaults to a small Qwen instruct tokenizer with long context; not ``gpt2``),
+BENCHMARK_TOKENIZER (defaults to the Qwen3.5-397B GPTQ tokenizer),
 BENCHMARK_MAX_CONCURRENCY, BENCHMARK_EXTRA_REQUEST_BODY (JSON object merged into the bench request body),
 BENCHMARK_PRESERVE_SEPARATE_REASONING (if true: do not inject ``separate_reasoning: false``),
 BENCHMARK_PRESERVE_THINKING (if true: do not inject ``chat_template_kwargs.enable_thinking: false`` for Qwen3).
@@ -37,8 +37,8 @@ import urllib.request
 
 DEFAULT_BASE = os.environ.get("BENCHMARK_BASE_URL", "http://127.0.0.1:30000")
 DEFAULT_BACKEND = os.environ.get("BENCHMARK_BACKEND", "sglang-oai-chat")
-# Long context; avoids gpt2's 1024 limit during bench retokenization. Override if needed.
-DEFAULT_TOKENIZER = os.environ.get("BENCHMARK_TOKENIZER", "Qwen/Qwen2.5-0.5B-Instruct")
+# Keep defaults aligned with the Qwen3.5-397B GPTQ launch scripts.
+DEFAULT_TOKENIZER = os.environ.get("BENCHMARK_TOKENIZER", "Qwen/Qwen3.5-397B-A17B-GPTQ-Int4")
 
 _DATASETS_WITH_RANDOM_LEN = frozenset({"random", "random-ids", "image"})
 
@@ -135,8 +135,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--num-prompts",
         type=int,
-        default=_env_int("BENCHMARK_NUM_PROMPTS", 20),
-        help="Prompt count (default 20 or BENCHMARK_NUM_PROMPTS).",
+        default=_env_int("BENCHMARK_NUM_PROMPTS", 3),
+        help="Prompt count (default 3 or BENCHMARK_NUM_PROMPTS).",
     )
     p.add_argument(
         "--random-input-len",
@@ -174,7 +174,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=DEFAULT_TOKENIZER,
         help=(
             "HF tokenizer for synthetic prompts (BENCHMARK_TOKENIZER). "
-            "Must be a real repo; default is a small Qwen instruct model (not gpt2's 1024 limit)."
+            "Must be a real repo; default matches Qwen3.5-397B GPTQ."
         ),
     )
     p.add_argument(
