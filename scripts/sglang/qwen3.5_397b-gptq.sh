@@ -3,7 +3,7 @@
 # Configuration variables
 MODEL="Qwen/Qwen3.5-397B-A17B-GPTQ-Int4"
 SERVED_MODEL_NAME="qwen3.5-397b"
-CONTEXT_LENGTH=65536
+CONTEXT_LENGTH=94000
 MEM_FRACTION_STATIC=0.93
 TENSOR_PARALLEL=2
 HOST="0.0.0.0"
@@ -26,7 +26,7 @@ SGLANG_USE_AITER=1 python3 -m sglang.launch_server \
     --port ${PORT} \
     --enable-metrics \
     --watchdog-timeout 1200 \
-    --model-loader-extra-config '{"enable_multithread_load": true, "num_threads": 2}' \
+    --model-loader-extra-config '{"enable_multithread_load": true, "num_threads": 4}' \
     --attention-backend ${ATTENTION_BACKEND} \
     --tool-call-parser ${TOOL_CALL_PARSER} \
     --reasoning-parser qwen3 \
@@ -35,9 +35,7 @@ SGLANG_USE_AITER=1 python3 -m sglang.launch_server \
     --speculative-eagle-topk 1 \
     --speculative-num-draft-tokens 4 \
     --enable-flashinfer-allreduce-fusion \
-    --mamba-scheduler-strategy no_buffer \
-    --disable-radix-cache \
-    --disable-cuda-graph  \
+    --mamba-scheduler-strategy extra_buffer \
     --quantization moe_wna16 \
     --kv-cache-dtype fp8_e4m3 \
     --max-running-requests 3 \
