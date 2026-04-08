@@ -27,17 +27,17 @@ HF_HUB_OFFLINE=1 SGLANG_USE_AITER=1 python3 -m sglang.launch_server \
     --disable-overlap-schedule \
     --enable-metrics \
     --watchdog-timeout 1200 \
-    --model-loader-extra-config '{"enable_multithread_load": true}' \
+    --model-loader-extra-config '{"enable_multithread_load": true, "num_threads": 64}' \
     --attention-backend ${ATTENTION_BACKEND} \
+    --moe-runner-backend triton \
     --tool-call-parser ${TOOL_CALL_PARSER} \
     --reasoning-parser qwen3 \
-    --speculative-algorithm NEXTN \
+    --speculative-algorithm EAGLE \
     --speculative-num-steps 3 \
     --speculative-eagle-topk 1 \
     --speculative-num-draft-tokens 4 \
     --enable-flashinfer-allreduce-fusion \
-    --mamba-scheduler-strategy no_buffer \
-    --disable-radix-cache \
+    --mamba-scheduler-strategy extra_buffer \
     --quantization moe_wna16 \
     --kv-cache-dtype fp8_e5m2 \
     --max-running-requests 3 \
