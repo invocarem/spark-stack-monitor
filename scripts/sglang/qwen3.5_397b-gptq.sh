@@ -24,7 +24,7 @@ HF_HUB_OFFLINE=1 SGLANG_USE_AITER=1 python3 -m sglang.launch_server \
     --tp-size ${TENSOR_PARALLEL} \
     --host ${HOST} \
     --port ${PORT} \
-     -disable-overlap-schedule \
+    --disable-overlap-schedule \
     --enable-metrics \
     --watchdog-timeout 1200 \
     --model-loader-extra-config '{"enable_multithread_load": true, "num_threads": 4}' \
