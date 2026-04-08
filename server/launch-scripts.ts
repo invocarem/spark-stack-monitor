@@ -9,6 +9,7 @@ import {
   assertSafeContainerName,
   dockerExec,
   dockerExecDetached,
+  monitorLaunchExecEnv,
 } from "./docker.js";
 import { fetchInferenceModelIds } from "./sglang.js";
 import { findRepoRoot } from "./repo-root.js";
@@ -617,7 +618,11 @@ export async function runLaunchScriptInContainer(
     `printf '%s\\n' "---- $(date +%Y-%m-%dT%H:%M:%S%z) starting ${scriptBasename} ----" >> ${logPath}`,
     runScript,
   ].join(" && ");
-  const { code, stderr } = await dockerExecDetached(container, ["sh", "-c", shellCmd]);
+  const { code, stderr } = await dockerExecDetached(
+    container,
+    ["sh", "-c", shellCmd],
+    monitorLaunchExecEnv(),
+  );
   if (code !== 0) {
     return {
       ok: false,

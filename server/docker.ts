@@ -442,13 +442,33 @@ async function dockerGpuLive(container: string): Promise<DockerResult> {
   };
 }
 
+/**
+ * Optional TZ for detached launches: `MONITOR_LAUNCH_TZ` or host `TZ` (from repo `.env`).
+ * Passed as `docker exec -e TZ=…` so `date` and Python logging see local time; many images default to UTC.
+ */
+export function monitorLaunchExecEnv(): Record<string, string> | undefined {
+  const raw = process.env.MONITOR_LAUNCH_TZ?.trim() || process.env.TZ?.trim();
+  if (!raw) return undefined;
+  if (!/^[-+A-Za-z0-9_/]+$/.test(raw)) return undefined;
+  return { TZ: raw };
+}
+
 /** Run a command in the container in detached mode (returns immediately; use for long-running processes). */
 export async function dockerExecDetached(
   container: string,
   args: string[],
+  execEnv?: Record<string, string>,
 ): Promise<DockerResult> {
   assertSafeContainerName(container);
-  return runDocker(["exec", "-d", container, ...args]);
+  const envFlags: string[] = [];
+  if (execEnv) {
+    for (const [k, v] of Object.entries(execEnv)) {
+      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(k)) continue;
+      if (/[\n\r\0]/.test(v)) continue;
+      envFlags.push("-e", `${k}=${v}`);
+    }
+  }
+  return runDocker(["exec", "-d", ...envFlags, container, ...args]);
 }
 
 /** Blocking `docker exec` for short probes (e.g. pgrep). */
@@ -584,10 +604,10 @@ export async function runToolInContainer(
       `(command -v script >/dev/null 2>&1 && script -qefc '${launchCommand}' - || sh -c '${launchCommand}') >> ${m.logPath} 2>&1`;
     const shellCmd = [
       "mkdir -p /workspace/.monitor",
-      `printf '%s\\n' "---- $(date -u +%Y-%m-%dT%H:%M:%SZ) ${m.id} ----" >> ${m.logPath}`,
+      `printf '%s\\n' "---- $(date +%Y-%m-%dT%H:%M:%S%z) ${m.id} ----" >> ${m.logPath}`,
       runScript,
     ].join(" && ");
-    const r = await dockerExecDetached(container, ["sh", "-c", shellCmd]);
+    const r = await dockerExecDetached(container, ["sh", "-c", shellCmd], monitorLaunchExecEnv());
     if (r.code !== 0) {
       return r;
     }
