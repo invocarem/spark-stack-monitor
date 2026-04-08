@@ -16,7 +16,7 @@ TOOL_CALL_PARSER="qwen3_coder"
 # Remove --disable-radix-cache (extra_buffer requires radix cache)
 # Remove --disable-cuda-graph (enable CUDA graphs)
 
-SGLANG_USE_AITER=1 python3 -m sglang.launch_server \
+HF_HUB_OFFLINE=1 SGLANG_USE_AITER=1 python3 -m sglang.launch_server \
     --model-path ${MODEL} \
     --served-model-name ${SERVED_MODEL_NAME} \
     --context-length ${CONTEXT_LENGTH} \
@@ -24,6 +24,7 @@ SGLANG_USE_AITER=1 python3 -m sglang.launch_server \
     --tp-size ${TENSOR_PARALLEL} \
     --host ${HOST} \
     --port ${PORT} \
+     -disable-overlap-schedule \
     --enable-metrics \
     --watchdog-timeout 1200 \
     --model-loader-extra-config '{"enable_multithread_load": true, "num_threads": 4}' \
@@ -35,10 +36,12 @@ SGLANG_USE_AITER=1 python3 -m sglang.launch_server \
     --speculative-eagle-topk 1 \
     --speculative-num-draft-tokens 4 \
     --enable-flashinfer-allreduce-fusion \
-    --mamba-scheduler-strategy extra_buffer \
+    --mamba-scheduler-strategy no_buffer \
+    --disable-radix-cache \
     --quantization moe_wna16 \
-    --kv-cache-dtype fp8_e4m3 \
+    --kv-cache-dtype fp8_e5m2 \
     --max-running-requests 3 \
+    --max-prefill-tokens=4096 \
     --enable-cache-report \
     --preferred-sampling-params '{"temperature":0.6,"top_p":0.95,"top_k":20,"min_p":0.0,"presence_penalty":0.0,"repetition_penalty":1.0}' \
     --trust-remote-code
