@@ -164,10 +164,11 @@
                 <code>npm run dev</code>. <strong>SGLang</strong>: merges <code>--dist-init-addr</code> /
                 <code>--nnodes</code> / <code>--node-rank</code> into <code>launch_server</code> when missing from the script.
                 <strong>vLLM</strong>: merges <code>--master-addr</code> / <code>--master-port</code> (from the
-                <code>MASTER_ADDR</code> / <code>MASTER_PORT</code> fields), <code>--nnodes</code>, <code>--node-rank</code>,
-                and <code>--distributed-executor-backend mp</code> when <code>--nnodes</code> &gt; 1—see
-                <a href="https://docs.vllm.ai/en/stable/cli/serve/">vLLM <code>serve</code> CLI</a> (multi-node uses the
-                <code>mp</code> backend; <code>--dist-init-addr</code> is SGLang-only).
+                <code>MASTER_ADDR</code> / <code>MASTER_PORT</code> fields), <code>--nnodes</code>, and
+                <code>--node-rank</code>. Set <code>--distributed-executor-backend</code> (<code>mp</code> vs
+                <code>ray</code>) in your script—see
+                <a href="https://docs.vllm.ai/en/stable/cli/serve/">vLLM <code>serve</code> CLI</a>
+                (<code>--dist-init-addr</code> is SGLang-only).
               </p>
               <label class="launch-cluster-enable">
                 <input type="checkbox" id="chk-launch-cluster" aria-label="Apply multi-node cluster options" />

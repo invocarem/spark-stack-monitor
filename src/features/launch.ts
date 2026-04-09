@@ -227,12 +227,6 @@ function mergeClusterQuickOverrides(pairs: LaunchArgPair[]): LaunchArgPair[] {
     if (i >= 0) out[i] = { ...out[i], value, enabled: true };
     else out.push({ key, value, enabled: true });
   };
-  /** Only add if the launch-arg list does not already define this flag (preserve script / UI). */
-  const ensure = (key: string, value: string): void => {
-    if (!value) return;
-    if (out.some((p) => p.key === key)) return;
-    out.push({ key, value, enabled: true });
-  };
 
   const provider = getMonitorProvider();
   if (provider === "vllm") {
@@ -244,10 +238,6 @@ function mergeClusterQuickOverrides(pairs: LaunchArgPair[]): LaunchArgPair[] {
     set("--master-port", masterPort);
     set("--nnodes", nnodes);
     set("--node-rank", nodeRank);
-    const n = Number.parseInt(nnodes, 10);
-    if (!Number.isNaN(n) && n > 1) {
-      ensure("--distributed-executor-backend", "mp");
-    }
     return out;
   }
 

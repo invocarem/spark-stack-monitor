@@ -17,4 +17,5 @@ exec vllm serve ${MODEL} \
     --load-format fastsafetensors \
     --attention-backend flashinfer \
     --max-model-len 262144 \
-    --reasoning-parser qwen3
+    --reasoning-parser qwen3 \
+    --distributed-executor-backend  ray
