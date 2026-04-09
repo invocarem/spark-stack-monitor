@@ -69,6 +69,7 @@ const launchClusterDistInit = document.querySelector<HTMLInputElement>("#launch-
 const launchClusterNnodes = document.querySelector<HTMLInputElement>("#launch-cluster-nnodes");
 const launchClusterNodeRank = document.querySelector<HTMLInputElement>("#launch-cluster-node-rank");
 const launchClusterFields = document.querySelector<HTMLElement>("#launch-cluster-fields");
+const launchClusterSglangCliFields = document.querySelector<HTMLElement>("#launch-cluster-sglang-cli-fields");
 
 /** `true` = pgrep saw SGLang server process; `false` = not running; `null` = not checked or unknown */
 let lastServerRunning: boolean | null = null;
@@ -78,7 +79,10 @@ const scriptsById = new Map<string, LaunchScriptInfo>();
 function updateLaunchCopy(provider: MonitorProvider): void {
   const isVllm = provider === "vllm";
   if (launchClusterSection) {
-    launchClusterSection.hidden = isVllm;
+    launchClusterSection.hidden = false;
+  }
+  if (launchClusterSglangCliFields) {
+    launchClusterSglangCliFields.hidden = isVllm;
   }
   if (launchClusterFields) {
     launchClusterFields.style.opacity = chkLaunchCluster?.checked ? "1" : "0.55";
@@ -199,6 +203,9 @@ function collectLaunchArgsOverrides(scriptId: string): LaunchArgPair[] {
 /** When cluster mode is on, merge dist / nnodes / node-rank from the cluster form into launch arg pairs. */
 function mergeClusterQuickOverrides(pairs: LaunchArgPair[]): LaunchArgPair[] {
   if (!chkLaunchCluster?.checked) return pairs;
+  if (getMonitorProvider() === "vllm") {
+    return pairs;
+  }
   const distInit = launchClusterDistInit?.value?.trim() ?? "";
   const nnodes = launchClusterNnodes?.value?.trim() ?? "";
   const nodeRank = launchClusterNodeRank?.value?.trim() ?? "";
@@ -219,7 +226,8 @@ function mergeClusterQuickOverrides(pairs: LaunchArgPair[]): LaunchArgPair[] {
 let clusterDefaultsDeferToEnvOnly = false;
 
 async function applyClusterDefaultsFromEnvFile(): Promise<void> {
-  if (getMonitorProvider() !== "sglang") {
+  const provider = getMonitorProvider();
+  if (provider !== "sglang" && provider !== "vllm") {
     clusterDefaultsDeferToEnvOnly = false;
     return;
   }
@@ -247,9 +255,11 @@ async function applyClusterDefaultsFromEnvFile(): Promise<void> {
     setIfEmpty(launchClusterGloo, le.GLOO_SOCKET_IFNAME);
     setIfEmpty(launchClusterMasterAddr, le.MASTER_ADDR);
     setIfEmpty(launchClusterMasterPort, le.MASTER_PORT);
-    setIfEmpty(launchClusterDistInit, body.distInit);
-    setIfEmpty(launchClusterNnodes, body.nnodes);
-    setIfEmpty(launchClusterNodeRank, body.nodeRank);
+    if (provider === "sglang") {
+      setIfEmpty(launchClusterDistInit, body.distInit);
+      setIfEmpty(launchClusterNnodes, body.nnodes);
+      setIfEmpty(launchClusterNodeRank, body.nodeRank);
+    }
 
     if (chkLaunchCluster) {
       if (clusterDefaultsDeferToEnvOnly) {
@@ -269,9 +279,16 @@ async function applyClusterDefaultsFromEnvFile(): Promise<void> {
   }
 }
 
-/** Apply Container tab / localStorage preference over cluster checkbox (SGLang only). */
+/** Apply Container tab / localStorage preference over cluster checkbox. */
 function applyStoredStackLaunchModeToClusterUI(): void {
-  if (getMonitorProvider() !== "sglang" || !chkLaunchCluster || clusterDefaultsDeferToEnvOnly) return;
+  const provider = getMonitorProvider();
+  if (
+    (provider !== "sglang" && provider !== "vllm") ||
+    !chkLaunchCluster ||
+    clusterDefaultsDeferToEnvOnly
+  ) {
+    return;
+  }
   const m = getStoredStackLaunchMode();
   if (m === null) return;
   chkLaunchCluster.checked = m === "cluster";
@@ -625,7 +642,8 @@ export function initLaunch(): void {
     if (launchClusterFields) {
       launchClusterFields.style.opacity = chkLaunchCluster.checked ? "1" : "0.55";
     }
-    if (getMonitorProvider() === "sglang" && chkLaunchCluster && !clusterDefaultsDeferToEnvOnly) {
+    const p = getMonitorProvider();
+    if ((p === "sglang" || p === "vllm") && chkLaunchCluster && !clusterDefaultsDeferToEnvOnly) {
       setStoredStackLaunchMode(chkLaunchCluster.checked ? "cluster" : "single");
     }
   });

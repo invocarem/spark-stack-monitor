@@ -4,10 +4,10 @@
  * `containers/sglang/run-docker-openai.sh` (GPU, shm, port, mounts, env, image, name).
  * Multi-node: `MONITOR_CLUSTER_APPLY` or `MONITOR_STACK_SGLANG_CLUSTER_RUNTIME=1` adds
  * `--network host`, `--privileged`, optional `/dev/infiniband`, `memlock` ulimit; see `launch-cluster-defaults.ts`.
+ * The same cluster env/runtime applies to **vLLM** presets when those flags are set (SGLang behavior is unchanged:
+ * for `provider === "sglang"`, the booleans match the previous `sglang && …` expressions exactly).
  * The monitor uses `docker run -d` with `sleep infinity` instead of `-it … bash` so
  * the process works without a TTY and the Launch tab can `docker exec`.
- *
- * vLLM testing lives on a separate page; see `vllm-stack.ts`.
  */
 
 import fs from "node:fs";
@@ -118,6 +118,70 @@ export type RunStackResult =
   | { ok: true; container: string; started: boolean; message: string }
   | { ok: false; error: string; stderr?: string };
 
+export type StackContainerStatus =
+  | { ok: true; state: "running"; container: string; image: string }
+  | { ok: true; state: "stopped"; container: string }
+  | { ok: true; state: "missing"; container: string }
+  | { ok: false; error: string };
+
+/** Inspect a whitelisted stack container (running / stopped / missing). */
+export async function getStackContainerStatus(containerName: string): Promise<StackContainerStatus> {
+  const name = containerName.trim();
+  if (!ALLOWED_NAMES.has(name)) {
+    return { ok: false, error: "Container name is not a known stack preset." };
+  }
+  try {
+    assertSafeContainerName(name);
+  } catch {
+    return { ok: false, error: "Invalid container name." };
+  }
+
+  const runningProbe = await dockerHost(["inspect", "-f", "{{.State.Running}}", name]);
+  if (runningProbe.code !== 0) {
+    return { ok: true, state: "missing", container: name };
+  }
+  if (runningProbe.stdout.trim() !== "true") {
+    return { ok: true, state: "stopped", container: name };
+  }
+
+  const img = await dockerHost(["inspect", "-f", "{{.Config.Image}}", name]);
+  const image = img.code === 0 && img.stdout.trim() ? img.stdout.trim() : "unknown";
+  return { ok: true, state: "running", container: name, image };
+}
+
+const STACK_LOG_TAIL_MAX = 10_000;
+
+export type StackContainerLogsResult =
+  | { ok: true; text: string }
+  | { ok: false; error: string; stderr?: string };
+
+/** `docker logs --tail` for a whitelisted stack container. */
+export async function getStackContainerLogs(
+  containerName: string,
+  tailLines: number,
+): Promise<StackContainerLogsResult> {
+  const name = containerName.trim();
+  if (!ALLOWED_NAMES.has(name)) {
+    return { ok: false, error: "Container name is not a known stack preset." };
+  }
+  try {
+    assertSafeContainerName(name);
+  } catch {
+    return { ok: false, error: "Invalid container name." };
+  }
+  const n = Math.min(Math.max(1, Math.trunc(tailLines)), STACK_LOG_TAIL_MAX);
+  const r = await dockerHost(["logs", "--tail", String(n), name]);
+  if (r.code !== 0) {
+    const err = (r.stderr.trim() || r.stdout.trim()).slice(0, 400);
+    return {
+      ok: false,
+      error: err || `docker logs failed (exit ${r.code ?? "?"})`,
+      stderr: r.stderr.trim() || undefined,
+    };
+  }
+  return { ok: true, text: r.stdout };
+}
+
 export async function runStackPreset(presetId: string): Promise<RunStackResult> {
   const preset = getStackPreset(presetId);
   if (!preset) {
@@ -164,10 +228,12 @@ export async function runStackPreset(presetId: string): Promise<RunStackResult> 
     preset.provider === "vllm" ? vllmStackHostPort() : sglangStackHostPort();
   const containerPublish = preset.provider === "vllm" ? "8000" : "30000";
 
-  const clusterStackEnv =
-    preset.provider === "sglang" && shouldInjectSglangStackClusterDockerEnv();
-  const clusterRuntime =
-    preset.provider === "sglang" && shouldUseSglangClusterDockerRuntime();
+  const wantClusterDockerEnv = shouldInjectSglangStackClusterDockerEnv();
+  const wantClusterRuntime = shouldUseSglangClusterDockerRuntime();
+  const presetSupportsCluster =
+    preset.provider === "sglang" || preset.provider === "vllm";
+  const clusterStackEnv = wantClusterDockerEnv && presetSupportsCluster;
+  const clusterRuntime = wantClusterRuntime && presetSupportsCluster;
 
   const args: string[] = ["run", "-d", "--gpus", "all"];
   if (clusterRuntime) {

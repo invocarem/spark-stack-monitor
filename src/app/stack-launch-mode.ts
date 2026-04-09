@@ -1,5 +1,5 @@
 /**
- * Shared preference: single-node vs multi-node (cluster) for SGLang.
+ * Shared preference: single-node vs multi-node (cluster) for Launch tab (SGLang / vLLM).
  * Stored in localStorage and synced between Container and Launch tabs.
  */
 

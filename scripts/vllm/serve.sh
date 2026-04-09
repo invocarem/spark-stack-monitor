@@ -20,6 +20,6 @@ exec vllm serve "${MODEL}" \
   --max-num-batched-tokens 8192 \
   --trust-remote-code \
   --chat-template unsloth.jinja \
-  -tp 1 \
+  --tensor-parallel-size 2 \
   --distributed-executor-backend ray
 

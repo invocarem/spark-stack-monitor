@@ -238,9 +238,27 @@ export const TOOLS: readonly ToolMeta[] = [
     id: "benchmark",
     label: "benchmark.py",
     description:
-      "Runs `python3 -m sglang.bench_serving` (HF --model + --served-model-name; injects separate_reasoning:false and chat_template enable_thinking:false unless BENCHMARK_PRESERVE_*). Dashboard /api/benchmark uses the same defaults (BENCHMARK_DEFAULT_MAX_TOKENS=256).",
+      "Shim → benchmark_sglang.py. Prefer benchmark_sglang.py or benchmark_vllm.py.",
     format: "text",
     path: `${WORKSPACE_TOOLS}/benchmark.py`,
+    runner: "python3",
+  },
+  {
+    id: "benchmark_sglang",
+    label: "benchmark_sglang.py",
+    description:
+      "Runs `python3 -m sglang.bench_serving` (HF --model + --served-model-name; injects separate_reasoning:false and chat_template enable_thinking:false unless BENCHMARK_PRESERVE_*). Dashboard /api/benchmark uses the same defaults (BENCHMARK_DEFAULT_MAX_TOKENS=256).",
+    format: "text",
+    path: `${WORKSPACE_TOOLS}/benchmark_sglang.py`,
+    runner: "python3",
+  },
+  {
+    id: "benchmark_vllm",
+    label: "benchmark_vllm.py",
+    description:
+      "Runs `vllm bench serve` against VLLM_BASE_URL (default :8000). BENCHMARK_EXTRA_REQUEST_BODY → --extra-body. Set VLLM_BENCH_CMD if `vllm` is not on PATH.",
+    format: "text",
+    path: `${WORKSPACE_TOOLS}/benchmark_vllm.py`,
     runner: "python3",
   },
   {

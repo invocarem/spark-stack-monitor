@@ -10,4 +10,5 @@ vllm serve /models/Intel-Qwen3.5-122B-A10B-int4-AutoRound \
   --reasoning-parser qwen3 \
   --max-num-batched-tokens 8192 \
   --trust-remote-code \
-  --chat-template unsloth.jinja
+  --chat-template unsloth.jinja \
+  --tensor-parallel-size 2

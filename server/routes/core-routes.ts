@@ -19,7 +19,13 @@ import {
   stopLaunchServerInContainer,
 } from "../launch-scripts.js";
 import { getLaunchClusterDefaultsFromEnv } from "../launch-cluster-defaults.js";
-import { listStackPresets, runStackPreset, stopStackContainer } from "../stack-run.js";
+import {
+  getStackContainerLogs,
+  getStackContainerStatus,
+  listStackPresets,
+  runStackPreset,
+  stopStackContainer,
+} from "../stack-run.js";
 
 type ProviderId = "sglang" | "vllm";
 
@@ -128,6 +134,36 @@ export function registerCoreRoutes(app: Hono): void {
       return c.json({ error: result.error, stderr: result.stderr }, 400);
     }
     return c.json({ ok: true, message: result.message });
+  });
+
+  app.get("/api/stack/status", async (c) => {
+    const container = c.req.query("container")?.trim() ?? "";
+    if (!container) {
+      return c.json({ error: "Missing query parameter: container" }, 400);
+    }
+    const result = await getStackContainerStatus(container);
+    if (!result.ok) {
+      return c.json({ ok: false, error: result.error }, 400);
+    }
+    return c.json(result);
+  });
+
+  app.get("/api/stack/logs", async (c) => {
+    const container = c.req.query("container")?.trim() ?? "";
+    if (!container) {
+      return c.json({ error: "Missing query parameter: container" }, 400);
+    }
+    const linesRaw = c.req.query("lines");
+    const parsed =
+      linesRaw !== undefined && linesRaw !== ""
+        ? Number(linesRaw)
+        : 400;
+    const lines = Number.isFinite(parsed) ? parsed : 400;
+    const result = await getStackContainerLogs(container, lines);
+    if (!result.ok) {
+      return c.json({ ok: false, error: result.error, stderr: result.stderr }, 400);
+    }
+    return c.json({ ok: true, text: result.text });
   });
 
   app.get("/api/probe", async (c) => {
@@ -288,19 +324,7 @@ export function registerCoreRoutes(app: Hono): void {
     }
   });
 
-  app.get("/api/launch/cluster-defaults", (c) => {
-    if (launchProvider(c) !== "sglang") {
-      return c.json({
-        launchEnv: {},
-        distInit: "",
-        nnodes: "",
-        nodeRank: "",
-        applyCluster: false,
-        monitorClusterApplySetInEnv: false,
-      });
-    }
-    return c.json(getLaunchClusterDefaultsFromEnv());
-  });
+  app.get("/api/launch/cluster-defaults", (c) => c.json(getLaunchClusterDefaultsFromEnv()));
 
   app.get("/api/launch/status", async (c) => {
     const container = c.req.query("container")?.trim() ?? "";

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Run a small **task** benchmark: send each problem to chat/completions and score with simple checkers.
 
-This complements ``benchmark.py`` (throughput). Here you measure **rough pass rate** on curated prompts.
+This complements ``benchmark_sglang.py`` / ``benchmark_vllm.py`` (throughput). Here you measure **rough pass rate** on curated prompts.
 
 Input: JSONL (one JSON object per line). Fields:
 

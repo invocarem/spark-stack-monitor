@@ -74,6 +74,13 @@ const SGLANG_LAUNCH_LINE_RE =
  */
 const SGLANG_PGREP_ERE = String.raw`sglang\.launch_server|sglang serve`;
 
+/**
+ * `pgrep -f` extended regex for a running `vllm serve …` process.
+ * Use `[v]llm serve` so the pattern does not match the `pgrep` command line itself (which would
+ * otherwise contain the literal substring `vllm serve` and falsely report the server as running).
+ */
+const VLLM_PGREP_ERE = "[v]llm serve";
+
 /** Render terminal CR behavior so progress bars update in-place. */
 export function normalizeLaunchLogText(text: string): string {
   if (!text) return text;
@@ -403,7 +410,7 @@ function parseServedModelFromArgs(text: string): string | null {
  * When running, tries (1) `ps` args for `--served-model-name`, then (2) `GET /v1/models` on the host inference URL.
  */
 function providerProcessPattern(provider: LaunchProvider): string {
-  return provider === "vllm" ? "vllm serve" : SGLANG_PGREP_ERE;
+  return provider === "vllm" ? VLLM_PGREP_ERE : SGLANG_PGREP_ERE;
 }
 
 function providerName(provider: LaunchProvider): string {
@@ -685,8 +692,7 @@ export async function stopLaunchServerInContainer(
   if (after.running) {
     return {
       ok: false,
-      error:
-        "SGLang still appears to be running after SIGTERM/SIGKILL. Try `docker exec` into the container or restart it.",
+      error: `${providerName(provider)} still appears to be running after SIGTERM/SIGKILL. Try \`docker exec\` into the container or restart it.`,
     };
   }
 

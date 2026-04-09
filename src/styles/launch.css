@@ -192,6 +192,10 @@
   margin-top: 0.35rem;
 }
 
+#launch-cluster-sglang-cli-fields {
+  display: contents;
+}
+
 @media (max-width: 640px) {
   .launch-cluster-fields {
     grid-template-columns: 1fr;

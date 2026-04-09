@@ -21,14 +21,14 @@
     <div class="shell shell--vllm">
       <div class="shell-main shell-main--full">
         <section class="panel panel-nested">
-          <h2>Container <code id="vllm-fixed-name">vllm-node-tf5</code></h2>
+          <h2>Container <code id="vllm-fixed-name">vllm_node</code></h2>
           <p class="hint">
-            Starts an idle stack (<code>sleep infinity</code> as PID&nbsp;1), like the SGLang monitor. Then
-            open Tools below and run <em>vLLM: launch serve.sh (detached)</em> — it runs repo file
-            <code>scripts/vllm/serve.sh</code> (mounts at <code>/workspace/scripts/vllm/serve.sh</code>). Edit
-            that script to try different <code>vllm serve</code> flags. Image:
-            <code>MONITOR_VLLM_TF5_IMAGE</code> or <code>vllm-node-tf5:latest</code>. Port
-            <code>MONITOR_STACK_HOST_PORT</code>→8000.
+            Same stack as <strong>Start</strong> on the main page with preset <code>vllm_node</code>
+            (<code>POST /api/stack/run</code>): idle <code>sleep infinity</code> PID&nbsp;1, image
+            <code>vllm-node:latest</code> from <code>server/stack-run.ts</code>. For <code>vllm_node_tf5</code>,
+            use the Container tab there. Port <code>MONITOR_STACK_HOST_PORT</code>→8000 (or host network when
+            cluster runtime is enabled in <code>.env</code>). Then run <em>vLLM: launch serve.sh (detached)</em>
+            — repo file <code>scripts/vllm/serve.sh</code> at <code>/workspace/scripts/vllm/serve.sh</code>.
           </p>
           <div class="launch-toolbar container-toolbar">
             <button type="button" id="btn-vllm-stack-refresh" class="btn">Refresh status</button>

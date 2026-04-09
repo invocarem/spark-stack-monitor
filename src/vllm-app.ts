@@ -4,6 +4,8 @@
 
 import { fetchVllmConfig } from "./vllm/vllm-config";
 
+/** Must match `STACK_PRESETS` id in `server/stack-run.ts` (image `vllm-node:latest`). */
+const VLLM_STACK_PRESET = "vllm_node";
 const VLLM_CONTAINER = "vllm_node";
 const DEFAULT_TOOL_ID = "collect_env";
 const PIPE_PROBE_TOOL_ID = "pipe_probe";
@@ -103,7 +105,9 @@ function setToolbarBusy(busy: boolean): void {
 async function refreshStackStatus(): Promise<void> {
   setStackStatus("Checking…");
   try {
-    const res = await fetch("/api/vllm/stack/status");
+    const res = await fetch(
+      `/api/stack/status?container=${encodeURIComponent(VLLM_CONTAINER)}`,
+    );
     const body: unknown = await res.json();
     if (!res.ok) {
       const err = typeof body === "object" && body !== null && "error" in body
@@ -133,7 +137,11 @@ async function runStack(): Promise<void> {
   setToolbarBusy(true);
   setStackStatus("Starting…");
   try {
-    const res = await fetch("/api/vllm/stack/run", { method: "POST" });
+    const res = await fetch("/api/stack/run", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ preset: VLLM_STACK_PRESET }),
+    });
     const body = (await res.json()) as {
       ok?: boolean;
       message?: string;
@@ -159,7 +167,11 @@ async function stopStack(): Promise<void> {
   setToolbarBusy(true);
   setStackStatus("Stopping…");
   try {
-    const res = await fetch("/api/vllm/stack/stop", { method: "POST" });
+    const res = await fetch("/api/stack/stop", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ container: VLLM_CONTAINER }),
+    });
     const body = (await res.json()) as { ok?: boolean; message?: string; error?: string; stderr?: string };
     if (!res.ok) {
       const parts = [body.error ?? `HTTP ${res.status}`];
@@ -182,7 +194,9 @@ async function refreshDockerLogs(): Promise<void> {
   const lines = Number.isFinite(n) && n > 0 ? Math.trunc(n) : 400;
   setLogsStatus("Fetching docker logs…");
   try {
-    const res = await fetch(`/api/vllm/stack/logs?lines=${encodeURIComponent(String(lines))}`);
+    const res = await fetch(
+      `/api/stack/logs?container=${encodeURIComponent(VLLM_CONTAINER)}&lines=${encodeURIComponent(String(lines))}`,
+    );
     const body = (await res.json()) as { ok?: boolean; text?: string; error?: string };
     if (!res.ok || !body.ok) {
       logsOut.textContent = "—";
@@ -364,7 +378,9 @@ async function runTool(): Promise<void> {
   setToolStatus(`Running ${tool} in ${VLLM_CONTAINER}…`);
   if (btnToolRun) btnToolRun.disabled = true;
   try {
-    const stRes = await fetch("/api/vllm/stack/status");
+    const stRes = await fetch(
+      `/api/stack/status?container=${encodeURIComponent(VLLM_CONTAINER)}`,
+    );
     const stRaw: unknown = await stRes.json();
     if (!stRes.ok) {
       const err = typeof stRaw === "object" && stRaw !== null && "error" in stRaw

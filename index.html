@@ -155,16 +155,16 @@
               <div id="launch-args-list" class="launch-args-list" aria-live="polite"></div>
             </div>
 
-            <details class="launch-more launch-cluster" id="launch-cluster-section" hidden>
-              <summary>Multi-node cluster (SGLang)</summary>
+            <details class="launch-more launch-cluster" id="launch-cluster-section">
+              <summary>Multi-node cluster</summary>
               <p class="launch-cluster-lead">
-                Optional <code>export</code> lines (same as <code>docker exec</code> before
-                <code>launch_server</code>): use different <strong>NCCL / GLOO</strong> interfaces on each host.
-                Set <strong>node rank</strong> (and optionally dist / nnodes) here or only in the launch args
-                below. Run <strong>Run script</strong> on each node with its own container selected.
-                With <code>npm run dev</code>, put defaults in repo <code>.env</code>
-                (see <code>.env.example</code>, or <code>.env.example.head</code> / <code>.env.example.worker</code>);
-                the API loads them and prefills this section.
+                Optional <code>export</code> lines before your launch script: <strong>NCCL / GLOO / MASTER_*</strong>
+                (same for SGLang and vLLM—PyTorch / NCCL pick them up). Use different interfaces on each host;
+                run <strong>Run script</strong> per node. Repo <code>.env</code> can prefill via the API when you use
+                <code>npm run dev</code>. <strong>SGLang</strong> can also use <code>--dist-init-addr</code> /
+                <code>--nnodes</code> / <code>--node-rank</code> below (merged into <code>launch_server</code>).
+                <strong>vLLM</strong> does not get those flags injected into <code>vllm serve</code>—use the
+                exports plus your script (e.g. Ray, torchrun) for multi-node.
               </p>
               <label class="launch-cluster-enable">
                 <input type="checkbox" id="chk-launch-cluster" aria-label="Apply multi-node cluster options" />
@@ -187,18 +187,20 @@
                   <span><code>MASTER_PORT</code></span>
                   <input type="text" id="launch-cluster-master-port" placeholder="e.g. 50000" autocomplete="off" />
                 </label>
-                <label class="field field-grow">
-                  <span><code>--dist-init-addr</code> override</span>
-                  <input type="text" id="launch-cluster-dist-init" placeholder="host:port (optional)" autocomplete="off" />
-                </label>
-                <label class="field field-grow">
-                  <span><code>--nnodes</code> override</span>
-                  <input type="text" id="launch-cluster-nnodes" placeholder="optional" autocomplete="off" />
-                </label>
-                <label class="field field-grow">
-                  <span><code>--node-rank</code> override</span>
-                  <input type="text" id="launch-cluster-node-rank" placeholder="0 = head, 1+ = worker" autocomplete="off" />
-                </label>
+                <div id="launch-cluster-sglang-cli-fields">
+                  <label class="field field-grow">
+                    <span><code>--dist-init-addr</code> override</span>
+                    <input type="text" id="launch-cluster-dist-init" placeholder="host:port (optional)" autocomplete="off" />
+                  </label>
+                  <label class="field field-grow">
+                    <span><code>--nnodes</code> override</span>
+                    <input type="text" id="launch-cluster-nnodes" placeholder="optional" autocomplete="off" />
+                  </label>
+                  <label class="field field-grow">
+                    <span><code>--node-rank</code> override</span>
+                    <input type="text" id="launch-cluster-node-rank" placeholder="0 = head, 1+ = worker" autocomplete="off" />
+                  </label>
+                </div>
               </div>
             </details>
 
