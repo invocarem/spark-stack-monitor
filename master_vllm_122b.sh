@@ -1,0 +1,65 @@
+docker run --gpus all \
+  --name vllm_node_tf5-master \
+  --network host \
+  --shm-size=64g \
+  --memory=110g \
+  --memory-swap=120g \
+  --pids-limit=4096 \
+  --device /dev/infiniband:/dev/infiniband \
+  --device /dev/nvidia0:/dev/nvidia0 \
+  --device /dev/nvidiactl:/dev/nvidiactl \
+  --device /dev/nvidia-modeset:/dev/nvidia-modeset \
+  --device /dev/nvidia-uvm:/dev/nvidia-uvm \
+  --device /dev/nvidia-uvm-tools:/dev/nvidia-uvm-tools \
+  --cap-add IPC_LOCK \
+  --cap-add SYS_RESOURCE \
+  -v $(pwd):/workspace \
+  -v /sys/class/infiniband:/sys/class/infiniband:ro \
+  -v /proc/sys/vm/drop_caches:/host/proc/sys/vm/drop_caches \
+  -v ~/.cache/huggingface:/root/.cache/huggingface \
+  -v ${RAY_SCRIPT_DIR}/ray-start-head.sh:/opt/nvidia/entrypoint.d/99-ray-start-head.sh \
+  -v cache-data:/root/.cache/vllm \
+  -v cache-data:/root/.triton \
+  -v cache-data:/root/.cache/flashinfer \
+  -e RAY_NODE_IP_ADDRESS=${NODE_IP_ADDRESS} \
+  -e RAY_OVERRIDE_NODE_IP_ADDRESS=${NODE_IP_ADDRESS} \
+  -e RAY_CLUSTER_SIZE=${RAY_CLUSTER_SIZE} \
+  -e RAY_memory_monitor_refresh_ms=0 \
+  -e RAY_num_prestart_python_workers=0 \
+  -e RAY_object_store_memory=1073741824 \
+  -e VLLM_HOST_IP=${NODE_IP_ADDRESS} \
+  -e VLLM_MARLIN_USE_ATOMIC_ADD=1 \
+  -e MN_IF_NAME=enp1s0f1np1 \
+  -e UCX_NET_DEVICES=enp1s0f1np1 \
+  -e NCCL_IB_DISABLE=0 \
+  -e NCCL_SOCKET_IFNAME=enp1s0f1np1 \
+  -e NCCL_IB_HCA=rocep1s0f1,roceP2p1s0f1 \
+  -e GLOO_SOCKET_IFNAME=enp1s0f1np1 \
+  -e OMPI_MCA_btl_tcp_if_include=enp1s0f1np1 \
+  -e TP_SOCKET_IFNAME=enp1s0f1np1 \
+  -e NCCL_IGNORE_CPU_AFFINITY=1 \
+  -e PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
+  -e NCCL_DEBUG=INFO \
+  --log-opt max-size=10m \
+  --log-opt max-file=5 \
+  -it --rm \
+  vllm-node-tf5 \
+  vllm serve Intel/Qwen3.5-122B-A10B-int4-AutoRound \
+    --served-model-name "qwen3.5-122b" \
+    --max-model-len 262144 \
+    --max-num-seqs 4 \
+    --enable-prefix-caching \
+    --gpu-memory-utilization 0.6 \
+    --port 8000 \
+    --host 0.0.0.0 \
+    --load-format fastsafetensors \
+    --kv-cache-dtype fp8_e4m3 \
+    --enable-chunked-prefil \
+    --enable-auto-tool-choice \
+    --tool-call-parser qwen3_coder \
+    --reasoning-parser qwen3 \
+    --max-num-batched-tokens 8192 \
+    --trust-remote-code \
+    --mm-encoder-tp-mode data \
+    --distributed-executor-backend ray \
+    --tensor-parallel-size 2

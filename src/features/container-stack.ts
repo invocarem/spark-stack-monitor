@@ -101,7 +101,9 @@ function updateStackModeVisibility(provider: MonitorProvider): void {
 function updateContainerCopy(provider: MonitorProvider): void {
   if (containerScriptLabel) {
     containerScriptLabel.textContent =
-      provider === "vllm" ? "containers/vllm/run-docker.sh" : "containers/sglang/run-docker*.sh";
+      provider === "vllm"
+        ? "containers/vllm/run-docker*.sh"
+        : "containers/sglang/run-docker*.sh";
   }
   if (containerLaunchScriptLabel) {
     containerLaunchScriptLabel.textContent =

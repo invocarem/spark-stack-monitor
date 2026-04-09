@@ -4,7 +4,7 @@
 
 import { fetchVllmConfig } from "./vllm/vllm-config";
 
-/** Must match `STACK_PRESETS` id in `server/stack-run.ts` (image `vllm-node:latest`). */
+/** Must match `STACK_PRESETS` id in `server/stack-presets.ts` (image `vllm-node:latest`). */
 const VLLM_STACK_PRESET = "vllm_node";
 const VLLM_CONTAINER = "vllm_node";
 const DEFAULT_TOOL_ID = "collect_env";

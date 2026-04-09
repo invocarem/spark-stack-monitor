@@ -1,16 +1,21 @@
 /**
- * Whitelisted `docker run` presets for the stack dev container (host API).
- * Each preset mirrors the flags in repo `containers/sglang/run-docker.sh` and
- * `containers/sglang/run-docker-openai.sh` (GPU, shm, port, mounts, env, image, name).
+ * Host API: start/stop whitelisted stack containers (`docker run`, start, stop).
+ * Preset ids and images are defined in `stack-presets.ts`.
+ *
+ * Each preset mirrors the flags in repo `containers/sglang/run-docker*.sh` (SGLang) or
+ * `containers/vllm/run-docker*.sh` (vLLM).
  * Multi-node: `MONITOR_CLUSTER_APPLY` or `MONITOR_STACK_SGLANG_CLUSTER_RUNTIME=1` adds
  * `--network host`, `--privileged`, optional `/dev/infiniband`, `memlock` ulimit; see `launch-cluster-defaults.ts`.
  * The same cluster env/runtime applies to **vLLM** presets when those flags are set (SGLang behavior is unchanged:
  * for `provider === "sglang"`, the booleans match the previous `sglang && …` expressions exactly).
- * The monitor uses `docker run -d` with `sleep infinity` instead of `-it … bash` so
- * the process works without a TTY and the Launch tab can `docker exec`.
+ * **vLLM** presets render source scripts into `.monitor/monitor-stack-<containerName>.rendered.sh`
+ * (Launch-tab style), then run that script so `/workspace` matches `findRepoRoot()` instead of the server CWD.
+ * SGLang presets still assemble `docker run` in-process.
+ * Rendered scripts use `docker run -d` with `sleep infinity` instead of `-it … bash` so the Launch tab can `docker exec`.
  */
 
 import fs from "node:fs";
+import { spawn } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
 import { assertSafeContainerName, dockerHost } from "./docker.js";
@@ -19,65 +24,36 @@ import {
   shouldInjectSglangStackClusterDockerEnv,
   shouldUseSglangClusterDockerRuntime,
 } from "./launch-cluster-defaults.js";
+import { writeVllmStackDockerScript } from "./render-vllm-stack-docker.js";
 import { findRepoRoot } from "./repo-root.js";
+import {
+  getStackPreset,
+  STACK_PRESET_CONTAINER_NAMES,
+} from "./stack-presets.js";
 
-export type StackProvider = "sglang" | "vllm";
-
-export type StackPreset = {
-  id: string;
-  label: string;
-  provider: StackProvider;
-  /** For documentation only; same layout as `containers/*.sh`. */
-  matchesScript: string;
-  containerName: string;
-  image: string;
-  /** Extra `docker run -e` pairs after HF_TOKEN (e.g. OpenAI/tiktoken image). */
-  extraEnv: readonly string[];
-};
-
-export const STACK_PRESETS: readonly StackPreset[] = [
-  {
-    id: "dgx_spark_tf5",
-    label: "SciTrera DGX Spark SGLang (tf5)",
-    provider: "sglang",
-    matchesScript: "containers/sglang/run-docker.sh",
-    containerName: "sglang_node_tf5",
-    image: "scitrera/dgx-spark-sglang:0.5.9-dev2-acab24a7-t5" ,
-    //image: "scitrera/dgx-spark-sglang:0.5.9-t5",
-    extraEnv: [],
-  },
-  {
-    id: "lmsys_spark",
-    label: "LM.Sys SGLang (spark)",
-    provider: "sglang",
-    matchesScript: "containers/sglang/run-docker-openai.sh",
-    containerName: "sglang_node",
-    image: "lmsysorg/sglang:spark",
-    extraEnv: ["TIKTOKEN_ENCODINGS_BASE=/tiktoken_encodings"],
-  },
-  {
-    id: "vllm_tf5",
-    label: "vLLM Node (tf5)",
-    provider: "vllm",
-    matchesScript: "containers/vllm/run-docker-tf5.sh",
-    containerName: "vllm_node_tf5",
-    image: "vllm-node-tf5:latest",
-    extraEnv: [],
-  },
-  {
-    id: "vllm_node",
-    label: "vLLM Node",
-    provider: "vllm",
-    matchesScript: "containers/vllm/run-docker.sh",
-    containerName: "vllm_node",
-    image: "vllm-node:latest",
-    extraEnv: [],
-  },
-] as const;
-
-const PRESET_BY_ID = new Map(STACK_PRESETS.map((p) => [p.id, p]));
-
-const ALLOWED_NAMES = new Set(STACK_PRESETS.map((p) => p.containerName));
+function runHostBashScript(scriptPath: string): Promise<{
+  code: number | null;
+  stdout: string;
+  stderr: string;
+}> {
+  return new Promise((resolve, reject) => {
+    const child = spawn("bash", [scriptPath], { windowsHide: true });
+    let stdout = "";
+    let stderr = "";
+    child.stdout?.setEncoding("utf8");
+    child.stderr?.setEncoding("utf8");
+    child.stdout?.on("data", (chunk: string) => {
+      stdout += chunk;
+    });
+    child.stderr?.on("data", (chunk: string) => {
+      stderr += chunk;
+    });
+    child.on("error", reject);
+    child.on("close", (code) => {
+      resolve({ code, stdout, stderr });
+    });
+  });
+}
 
 /** Published host port for SGLang stack presets (maps to container :30000; matches `scripts/sglang/*.sh`). */
 function sglangStackHostPort(): string {
@@ -106,14 +82,6 @@ async function containerState(
   return r.stdout.trim() === "true" ? { kind: "running" } : { kind: "stopped" };
 }
 
-export function getStackPreset(id: string): StackPreset | undefined {
-  return PRESET_BY_ID.get(id);
-}
-
-export function listStackPresets(provider: StackProvider): StackPreset[] {
-  return STACK_PRESETS.filter((p) => p.provider === provider);
-}
-
 export type RunStackResult =
   | { ok: true; container: string; started: boolean; message: string }
   | { ok: false; error: string; stderr?: string };
@@ -127,7 +95,7 @@ export type StackContainerStatus =
 /** Inspect a whitelisted stack container (running / stopped / missing). */
 export async function getStackContainerStatus(containerName: string): Promise<StackContainerStatus> {
   const name = containerName.trim();
-  if (!ALLOWED_NAMES.has(name)) {
+  if (!STACK_PRESET_CONTAINER_NAMES.has(name)) {
     return { ok: false, error: "Container name is not a known stack preset." };
   }
   try {
@@ -161,7 +129,7 @@ export async function getStackContainerLogs(
   tailLines: number,
 ): Promise<StackContainerLogsResult> {
   const name = containerName.trim();
-  if (!ALLOWED_NAMES.has(name)) {
+  if (!STACK_PRESET_CONTAINER_NAMES.has(name)) {
     return { ok: false, error: "Container name is not a known stack preset." };
   }
   try {
@@ -203,24 +171,6 @@ export async function runStackPreset(presetId: string): Promise<RunStackResult> 
     };
   }
 
-  if (state.kind === "stopped") {
-    const start = await dockerHost(["start", preset.containerName]);
-    if (start.code !== 0) {
-      const err = (start.stderr.trim() || start.stdout.trim()).slice(0, 800);
-      return {
-        ok: false,
-        error: err || `docker start failed (exit ${start.code ?? "?"})`,
-        stderr: start.stderr.trim() || undefined,
-      };
-    }
-    return {
-      ok: true,
-      container: preset.containerName,
-      started: true,
-      message: `Started existing container ${preset.containerName}.`,
-    };
-  }
-
   const repoRoot = findRepoRoot();
   const hfCache = path.join(os.homedir(), ".cache", "huggingface");
   const shm = shmSize();
@@ -234,6 +184,71 @@ export async function runStackPreset(presetId: string): Promise<RunStackResult> 
     preset.provider === "sglang" || preset.provider === "vllm";
   const clusterStackEnv = wantClusterDockerEnv && presetSupportsCluster;
   const clusterRuntime = wantClusterRuntime && presetSupportsCluster;
+
+  if (state.kind === "stopped") {
+    if (preset.provider === "vllm") {
+      // Match SGLang-style lifecycle: stack uses `--rm`, so a normal stop removes the
+      // container. If a stopped container still exists (e.g. created without `--rm`),
+      // remove it and recreate via the rendered script instead of `docker start`, so
+      // flags/env always match the current preset render.
+      await dockerHost(["rm", "-f", preset.containerName]);
+    } else {
+      const start = await dockerHost(["start", preset.containerName]);
+      if (start.code !== 0) {
+        const err = (start.stderr.trim() || start.stdout.trim()).slice(0, 800);
+        return {
+          ok: false,
+          error: err || `docker start failed (exit ${start.code ?? "?"})`,
+          stderr: start.stderr.trim() || undefined,
+        };
+      }
+      return {
+        ok: true,
+        container: preset.containerName,
+        started: true,
+        message: `Started existing container ${preset.containerName}.`,
+      };
+    }
+  }
+
+  if (preset.provider === "vllm") {
+    const token = process.env.HF_TOKEN?.trim();
+    const rendered = writeVllmStackDockerScript({
+      preset: {
+        id: preset.id,
+        containerName: preset.containerName,
+        matchesScript: preset.matchesScript,
+        image: preset.image,
+        extraEnv: preset.extraEnv,
+      },
+      repoRoot,
+      hostPublish,
+      shm,
+      clusterStackEnv,
+      clusterRuntime,
+      clusterDockerEnv: getSglangStackDockerEnvForClusterRun(),
+      ...(token ? { hfToken: token } : {}),
+    });
+    if (!rendered.ok) {
+      return { ok: false, error: rendered.error };
+    }
+    const run = await runHostBashScript(rendered.scriptPath);
+    if (run.code !== 0) {
+      const err = (run.stderr.trim() || run.stdout.trim()).slice(0, 1200);
+      return {
+        ok: false,
+        error: err || `stack docker script failed (exit ${run.code ?? "?"})`,
+        stderr: run.stderr.trim() || undefined,
+      };
+    }
+    const rel = path.relative(repoRoot, rendered.scriptPath);
+    return {
+      ok: true,
+      container: preset.containerName,
+      started: true,
+      message: `Created and started ${preset.containerName} using ${rel} (from ${preset.matchesScript}).${clusterStackEnv ? " Cluster \`.env\` NCCL/distributed \`-e\` applied." : ""}${clusterRuntime ? " Cluster runtime flags merged (privileged, memlock, IB when present); \`-p\` dropped with host network." : ""} Repo bind: \`${repoRoot}\` → \`/workspace\`.`,
+    };
+  }
 
   const args: string[] = ["run", "-d", "--gpus", "all"];
   if (clusterRuntime) {
@@ -293,10 +308,10 @@ export type StopStackResult =
   | { ok: true; message: string }
   | { ok: false; error: string; stderr?: string };
 
-/** Stop a stack container by name (whitelist only — names from STACK_PRESETS). */
+/** Stop a stack container by name (whitelist only — see `STACK_PRESET_CONTAINER_NAMES`). */
 export async function stopStackContainer(containerName: string): Promise<StopStackResult> {
   const name = containerName.trim();
-  if (!ALLOWED_NAMES.has(name)) {
+  if (!STACK_PRESET_CONTAINER_NAMES.has(name)) {
     return { ok: false, error: "Container name is not a known stack preset." };
   }
   try {

@@ -161,10 +161,13 @@
                 Optional <code>export</code> lines before your launch script: <strong>NCCL / GLOO / MASTER_*</strong>
                 (same for SGLang and vLLM—PyTorch / NCCL pick them up). Use different interfaces on each host;
                 run <strong>Run script</strong> per node. Repo <code>.env</code> can prefill via the API when you use
-                <code>npm run dev</code>. <strong>SGLang</strong> can also use <code>--dist-init-addr</code> /
-                <code>--nnodes</code> / <code>--node-rank</code> below (merged into <code>launch_server</code>).
-                <strong>vLLM</strong> does not get those flags injected into <code>vllm serve</code>—use the
-                exports plus your script (e.g. Ray, torchrun) for multi-node.
+                <code>npm run dev</code>. <strong>SGLang</strong>: merges <code>--dist-init-addr</code> /
+                <code>--nnodes</code> / <code>--node-rank</code> into <code>launch_server</code> when missing from the script.
+                <strong>vLLM</strong>: merges <code>--master-addr</code> / <code>--master-port</code> (from the
+                <code>MASTER_ADDR</code> / <code>MASTER_PORT</code> fields), <code>--nnodes</code>, <code>--node-rank</code>,
+                and <code>--distributed-executor-backend mp</code> when <code>--nnodes</code> &gt; 1—see
+                <a href="https://docs.vllm.ai/en/stable/cli/serve/">vLLM <code>serve</code> CLI</a> (multi-node uses the
+                <code>mp</code> backend; <code>--dist-init-addr</code> is SGLang-only).
               </p>
               <label class="launch-cluster-enable">
                 <input type="checkbox" id="chk-launch-cluster" aria-label="Apply multi-node cluster options" />
@@ -185,13 +188,9 @@
                 </label>
                 <label class="field field-grow">
                   <span><code>MASTER_PORT</code></span>
-                  <input type="text" id="launch-cluster-master-port" placeholder="e.g. 50000" autocomplete="off" />
+                  <input type="text" id="launch-cluster-master-port" placeholder="e.g. 29501 or 50000" autocomplete="off" />
                 </label>
-                <div id="launch-cluster-sglang-cli-fields">
-                  <label class="field field-grow">
-                    <span><code>--dist-init-addr</code> override</span>
-                    <input type="text" id="launch-cluster-dist-init" placeholder="host:port (optional)" autocomplete="off" />
-                  </label>
+                <div id="launch-cluster-mp-cli-fields">
                   <label class="field field-grow">
                     <span><code>--nnodes</code> override</span>
                     <input type="text" id="launch-cluster-nnodes" placeholder="optional" autocomplete="off" />
@@ -199,6 +198,12 @@
                   <label class="field field-grow">
                     <span><code>--node-rank</code> override</span>
                     <input type="text" id="launch-cluster-node-rank" placeholder="0 = head, 1+ = worker" autocomplete="off" />
+                  </label>
+                </div>
+                <div id="launch-cluster-sglang-cli-fields">
+                  <label class="field field-grow">
+                    <span><code>--dist-init-addr</code> — SGLang rendezvous (ignored for vLLM)</span>
+                    <input type="text" id="launch-cluster-dist-init" placeholder="host:port (optional)" autocomplete="off" />
                   </label>
                 </div>
               </div>

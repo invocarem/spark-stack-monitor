@@ -5,7 +5,7 @@ docker run --gpus all \
     -v ~/.cache/huggingface:/root/.cache/huggingface \
     -v $(pwd):/workspace \
     --env "HF_TOKEN=$HF_TOKEN" \
-    --network host --ipc=host \
+    --ipc=host \
     -it --rm \
     vllm-node:latest \
     bash

@@ -12,9 +12,11 @@ import {
   monitorLaunchExecEnv,
 } from "./docker.js";
 import { fetchInferenceModelIds } from "./sglang.js";
+import type { LaunchArgPair, LaunchProvider } from "./launch-types.js";
 import { findRepoRoot } from "./repo-root.js";
+import { filterVllmLaunchArgOverrides, vllmClusterArgSortIndex } from "./vllm/launch-script.js";
 
-export type LaunchProvider = "sglang" | "vllm";
+export type { LaunchArgPair, LaunchProvider } from "./launch-types.js";
 
 const HOST_SCRIPT_DIR_CANDIDATES: Record<LaunchProvider, readonly string[]> = {
   sglang: ["scripts/sglang"],
@@ -123,14 +125,14 @@ export function normalizeLaunchLogText(text: string): string {
   return lines.join("\n");
 }
 
-export type LaunchArgPair = {
-  key: string;
-  value: string;
-  enabled: boolean;
-};
+/** Flags merged from the Launch tab cluster section; listed first when appending to a script (SGLang). */
+const INJECT_ARG_KEY_ORDER_SGLANG = ["--dist-init-addr", "--nnodes", "--node-rank"] as const;
 
-/** Flags merged from the Launch tab cluster section; listed first when appending to a script. */
-const INJECT_ARG_KEY_ORDER = ["--dist-init-addr", "--nnodes", "--node-rank"] as const;
+function injectArgSortIndex(provider: LaunchProvider, key: string): number {
+  if (provider === "vllm") return vllmClusterArgSortIndex(key);
+  const idx = INJECT_ARG_KEY_ORDER_SGLANG.indexOf(key as (typeof INJECT_ARG_KEY_ORDER_SGLANG)[number]);
+  return idx === -1 ? Number.POSITIVE_INFINITY : idx;
+}
 
 function collectArgKeysPresentAsLines(lines: readonly string[]): Set<string> {
   const keys = new Set<string>();
@@ -145,6 +147,7 @@ function missingEnabledArgOverrides(
   originalLines: readonly string[],
   argOverrides: readonly LaunchArgPair[],
   byKey: Map<string, LaunchArgPair>,
+  provider: LaunchProvider,
 ): LaunchArgPair[] {
   const present = collectArgKeysPresentAsLines(originalLines);
   const out: LaunchArgPair[] = [];
@@ -154,10 +157,8 @@ function missingEnabledArgOverrides(
     out.push(ov);
   }
   return out.sort((a, b) => {
-    const ia = INJECT_ARG_KEY_ORDER.indexOf(a.key as (typeof INJECT_ARG_KEY_ORDER)[number]);
-    const ib = INJECT_ARG_KEY_ORDER.indexOf(b.key as (typeof INJECT_ARG_KEY_ORDER)[number]);
-    const ra = ia === -1 ? Number.POSITIVE_INFINITY : ia;
-    const rb = ib === -1 ? Number.POSITIVE_INFINITY : ib;
+    const ra = injectArgSortIndex(provider, a.key);
+    const rb = injectArgSortIndex(provider, b.key);
     if (ra !== rb) return ra - rb;
     return a.key.localeCompare(b.key);
   });
@@ -417,6 +418,32 @@ function providerName(provider: LaunchProvider): string {
   return provider === "vllm" ? "vLLM" : "SGLang";
 }
 
+/** Best-effort readiness probe for OpenAI-compatible `/v1/models` from inside the container. */
+async function probeOpenAiModelsInContainer(
+  container: string,
+  port: number,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const py =
+    "import json,sys,urllib.request;" +
+    `u='http://127.0.0.1:${port}/v1/models';` +
+    "r=urllib.request.urlopen(u,timeout=2);" +
+    "d=json.loads(r.read().decode('utf-8','ignore') or '{}');" +
+    "m=d.get('data');" +
+    "sys.exit(0 if isinstance(m,list) else 1)";
+  const tryPy3 = await dockerExec(container, ["python3", "-c", py]);
+  if (tryPy3.code === 0) return { ok: true };
+  const missingPy3 = /\bpython3\b/i.test(`${tryPy3.stderr}\n${tryPy3.stdout}`) &&
+    /(not found|can't open|executable file not found)/i.test(`${tryPy3.stderr}\n${tryPy3.stdout}`);
+  if (!missingPy3) {
+    const err = (tryPy3.stderr.trim() || tryPy3.stdout.trim() || "probe failed").slice(0, 220);
+    return { ok: false, error: err };
+  }
+  const tryPy = await dockerExec(container, ["python", "-c", py]);
+  if (tryPy.code === 0) return { ok: true };
+  const err = (tryPy.stderr.trim() || tryPy.stdout.trim() || "probe failed").slice(0, 220);
+  return { ok: false, error: err };
+}
+
 export async function getLaunchServerStatus(
   provider: LaunchProvider,
   container: string,
@@ -444,6 +471,22 @@ export async function getLaunchServerStatus(
   const ps = await dockerExec(container, ["sh", "-c", psCmd]);
   if (ps.code === 0 && ps.stdout.trim()) {
     servedModel = parseServedModelFromArgs(ps.stdout);
+  }
+
+  // vLLM can have a lingering process that never serves requests. Treat that as not-running
+  // so Launch is not hard-blocked by a stale/degraded process state.
+  if (provider === "vllm") {
+    const ready = await probeOpenAiModelsInContainer(container, 8000);
+    if (!ready.ok) {
+      return {
+        ok: true,
+        running: false,
+        detail:
+          `Found a vLLM process, but :8000 /v1/models is unreachable (${ready.error}). ` +
+          "Treating as not running so you can relaunch.",
+        servedModel,
+      };
+    }
   }
 
   if (provider === "sglang" && servedModel === null) {
@@ -564,6 +607,8 @@ export async function runLaunchScriptInContainer(
   ) {
     return { ok: false, error: "Invalid argOverrides format" };
   }
+  const argOverridesEffective =
+    provider === "vllm" ? filterVllmLaunchArgOverrides(argOverrides) : argOverrides;
   let envPrefix = "";
   if (launchEnv !== undefined && Object.keys(launchEnv).length > 0) {
     const filtered: Record<string, string> = {};
@@ -581,16 +626,15 @@ export async function runLaunchScriptInContainer(
     }
   }
   const hostScriptPath = path.join(dirs.hostDir, scriptBasename);
-  let overriddenScriptB64: string | null = null;
-  if (argOverrides && argOverrides.length > 0) {
-    let original = "";
-    try {
-      original = fs.readFileSync(hostScriptPath, "utf8");
-    } catch {
-      return { ok: false, error: "Could not read script for override" };
-    }
-    const lines = original.split(/\r?\n/);
-    const byKey = new Map(argOverrides.map((a) => [a.key, a]));
+  let renderedScript = "";
+  try {
+    renderedScript = fs.readFileSync(hostScriptPath, "utf8");
+  } catch {
+    return { ok: false, error: "Could not read launch script" };
+  }
+  if (argOverridesEffective && argOverridesEffective.length > 0) {
+    const lines = renderedScript.split(/\r?\n/);
+    const byKey = new Map(argOverridesEffective.map((a) => [a.key, a]));
     const updated = lines.flatMap((rawLine) => {
       const m = rawLine.match(/^(\s*)(--[A-Za-z0-9][A-Za-z0-9-]*)(?:\s+.*)?$/);
       if (!m) return [rawLine];
@@ -606,18 +650,18 @@ export async function runLaunchScriptInContainer(
       const hasSlash = rawLine.trimEnd().endsWith("\\");
       return [`${indent}${ov.key} ${quoteLaunchArgValue(ov.value)}${hasSlash ? " \\" : ""}`];
     });
-    const missing = missingEnabledArgOverrides(lines, argOverrides, byKey);
+    const missing = missingEnabledArgOverrides(lines, argOverridesEffective, byKey, provider);
     const finalLines = injectMissingArgsIntoRenderedLines(updated, missing, provider);
-    overriddenScriptB64 = Buffer.from(`${finalLines.join("\n")}\n`, "utf8").toString("base64");
+    renderedScript = `${finalLines.join("\n")}\n`;
   }
+  const renderedScriptB64 = Buffer.from(renderedScript, "utf8").toString("base64");
   /**
    * Detached `docker exec` has no TTY; many loaders disable or break progress bars without one.
    * `script -qefc` (util-linux) allocates a pseudo-terminal when available; fall back to plain bash.
    */
   const launchCommand =
-    overriddenScriptB64 === null
-      ? `bash ${inContainer}`
-      : `tmp="/workspace/.monitor/monitor-launch-${scriptBasename}.rendered.sh"; printf '%s' '${overriddenScriptB64}' | base64 -d > "$tmp" && chmod +x "$tmp" && bash "$tmp"; exit $?`;
+    `tmp="/workspace/.monitor/monitor-launch-${scriptBasename}.rendered.sh"; ` +
+    `printf '%s' '${renderedScriptB64}' | base64 -d > "$tmp" && chmod +x "$tmp" && bash "$tmp"; exit $?`;
   const runScript =
     `(command -v script >/dev/null 2>&1 && script -qefc '${launchCommand}' - || sh -c '${launchCommand}') >> ${logPath} 2>&1`;
   const shellCmd = [

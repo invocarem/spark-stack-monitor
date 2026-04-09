@@ -192,6 +192,7 @@
   margin-top: 0.35rem;
 }
 
+#launch-cluster-mp-cli-fields,
 #launch-cluster-sglang-cli-fields {
   display: contents;
 }

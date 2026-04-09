@@ -201,14 +201,25 @@ function collectLaunchArgsOverrides(scriptId: string): LaunchArgPair[] {
 }
 
 /** When cluster mode is on, merge dist / nnodes / node-rank from the cluster form into launch arg pairs. */
+/** Prefer UI overrides; fall back to script defaults from `/api/launch-scripts`. */
+function servedModelNameFromLaunchArgs(
+  scriptId: string,
+  argOverrides: LaunchArgPair[],
+): string | null {
+  const pick = (pairs: LaunchArgPair[]): string | null => {
+    for (const p of pairs) {
+      if (p.key !== "--served-model-name") continue;
+      if (p.enabled === false) continue;
+      const v = p.value?.trim() ?? "";
+      if (v) return v;
+    }
+    return null;
+  };
+  return pick(argOverrides) ?? pick(scriptsById.get(scriptId)?.launchArgs ?? []);
+}
+
 function mergeClusterQuickOverrides(pairs: LaunchArgPair[]): LaunchArgPair[] {
   if (!chkLaunchCluster?.checked) return pairs;
-  if (getMonitorProvider() === "vllm") {
-    return pairs;
-  }
-  const distInit = launchClusterDistInit?.value?.trim() ?? "";
-  const nnodes = launchClusterNnodes?.value?.trim() ?? "";
-  const nodeRank = launchClusterNodeRank?.value?.trim() ?? "";
   const out = pairs.map((p) => ({ ...p }));
   const set = (key: string, value: string): void => {
     if (!value) return;
@@ -216,6 +227,33 @@ function mergeClusterQuickOverrides(pairs: LaunchArgPair[]): LaunchArgPair[] {
     if (i >= 0) out[i] = { ...out[i], value, enabled: true };
     else out.push({ key, value, enabled: true });
   };
+  /** Only add if the launch-arg list does not already define this flag (preserve script / UI). */
+  const ensure = (key: string, value: string): void => {
+    if (!value) return;
+    if (out.some((p) => p.key === key)) return;
+    out.push({ key, value, enabled: true });
+  };
+
+  const provider = getMonitorProvider();
+  if (provider === "vllm") {
+    const masterAddr = launchClusterMasterAddr?.value?.trim() ?? "";
+    const masterPort = launchClusterMasterPort?.value?.trim() ?? "";
+    const nnodes = launchClusterNnodes?.value?.trim() ?? "";
+    const nodeRank = launchClusterNodeRank?.value?.trim() ?? "";
+    set("--master-addr", masterAddr);
+    set("--master-port", masterPort);
+    set("--nnodes", nnodes);
+    set("--node-rank", nodeRank);
+    const n = Number.parseInt(nnodes, 10);
+    if (!Number.isNaN(n) && n > 1) {
+      ensure("--distributed-executor-backend", "mp");
+    }
+    return out;
+  }
+
+  const distInit = launchClusterDistInit?.value?.trim() ?? "";
+  const nnodes = launchClusterNnodes?.value?.trim() ?? "";
+  const nodeRank = launchClusterNodeRank?.value?.trim() ?? "";
   set("--dist-init-addr", distInit);
   set("--nnodes", nnodes);
   set("--node-rank", nodeRank);
@@ -257,6 +295,8 @@ async function applyClusterDefaultsFromEnvFile(): Promise<void> {
     setIfEmpty(launchClusterMasterPort, le.MASTER_PORT);
     if (provider === "sglang") {
       setIfEmpty(launchClusterDistInit, body.distInit);
+    }
+    if (provider === "sglang" || provider === "vllm") {
       setIfEmpty(launchClusterNnodes, body.nnodes);
       setIfEmpty(launchClusterNodeRank, body.nodeRank);
     }
@@ -397,7 +437,7 @@ async function refreshLaunchStatus(): Promise<void> {
     } else {
       lastServedModel = null;
       setApplyModelButton(false);
-      setServerStatusLine("ok", "Not running — you can run a script.", null);
+      setServerStatusLine("ok", "Not running — you can run a script.", body.detail?.trim() || null);
     }
     updateRunButtonState();
   } catch (e) {
@@ -609,8 +649,16 @@ async function runLaunchScript(): Promise<void> {
       argOverrides.length > 0 || launchEnv
         ? " Launch args / cluster env applied."
         : "";
+    let modelHint = "";
+    if (getMonitorProvider() === "vllm") {
+      const mid = servedModelNameFromLaunchArgs(script, argOverrides);
+      if (mid) {
+        setPreferredModel(mid);
+        modelHint = ` Model id set to “${mid}” for Chat and Benchmark.`;
+      }
+    }
     setScriptStatus(
-      `${body.message ?? "Started."}${overrideHint} Use the Logs tab (launch script log) to watch output while the model loads.`,
+      `${body.message ?? "Started."}${overrideHint}${modelHint} Use the Logs tab (launch script log) to watch output while the model loads.`,
     );
     window.setTimeout(() => void refreshLaunchStatus(), 2000);
   } catch (e) {

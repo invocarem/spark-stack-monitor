@@ -3,14 +3,13 @@
 # Run from the monitor Tools entry "vLLM: launch serve.sh (detached)".
 
 set -euo pipefail
-MODEL="Qwen/Qwen3.5-2B"
-SERVED_MODEL_NAME="qwen3.5-2b"
-exec vllm serve ${MODEL} \
-    --served-model-name ${SERVED_MODEL_NAME} \
+
+exec vllm serve Qwen/Qwen3.5-35B-A3B \
+    --served-model-name qwen3.5-35b \
     --enable-auto-tool-choice \
     --tool-call-parser qwen3_coder \
     --language-model-only \
-    --gpu-memory-utilization 0.35 \
+    --gpu-memory-utilization 0.85 \
     --host 0.0.0.0 \
     --port 8000 \
     --tensor-parallel-size 2 \
