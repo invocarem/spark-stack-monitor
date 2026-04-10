@@ -155,7 +155,13 @@ fi
 # --shm-size 10.24g: Increases shared memory
 # --gpus all: Gives container access to all GPUs on the host
 # -v HF_HOME: Mounts HuggingFace cache to avoid re-downloading models
-docker run -it --rm \
+# -it only when stdout is a TTY; plain -i when run from scripts/API (docker rejects -t without a TTY).
+if [ -t 1 ]; then
+  DOCKER_TTY_FLAGS=(-it)
+else
+  DOCKER_TTY_FLAGS=(-i)
+fi
+docker run "${DOCKER_TTY_FLAGS[@]}" --rm \
     --entrypoint /bin/bash \
     --network host \
     --name "${CONTAINER_NAME}" \
