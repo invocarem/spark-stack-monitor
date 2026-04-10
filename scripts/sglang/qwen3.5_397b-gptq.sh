@@ -5,7 +5,7 @@ MODEL="Qwen/Qwen3.5-397B-A17B-GPTQ-Int4"
 SERVED_MODEL_NAME="qwen3.5-397b"
 CONTEXT_LENGTH=65536
 MAX_TOTAL_TOKENS=65536
-MEM_FRACTION_STATIC=0.90
+MEM_FRACTION_STATIC=0.94
 CHUNKED_PREFILL_SIZE=2048 
 TENSOR_PARALLEL=2
 HOST="0.0.0.0"
@@ -19,7 +19,7 @@ TOOL_CALL_PARSER="qwen3_coder"
 # Remove --disable-radix-cache (extra_buffer requires radix cache)
 # Remove --disable-cuda-graph (enable CUDA graphs)
 
-HF_HUB_OFFLINE=1 SGLANG_USE_AITER=1 python3 -m sglang.launch_server \
+HF_HUB_OFFLINE=1 SGLANG_USE_AITER=1 SGLANG_ENABLE_SPEC_V2=True sglang serve \
     --model-path ${MODEL} \
     --served-model-name ${SERVED_MODEL_NAME} \
     --context-length ${CONTEXT_LENGTH} \
@@ -35,12 +35,12 @@ HF_HUB_OFFLINE=1 SGLANG_USE_AITER=1 python3 -m sglang.launch_server \
     --fp8-gemm-backend ${FP8_GEMM_BACKEND} \
     --tool-call-parser ${TOOL_CALL_PARSER} \
     --reasoning-parser qwen3 \
-    --speculative-algorithm EAGLE \
+    --speculative-algorithm NEXTN \
     --speculative-num-steps 3 \
     --speculative-eagle-topk 1 \
     --speculative-num-draft-tokens 4 \
     --enable-flashinfer-allreduce-fusion \
-    --disable-radix-cache \
+    --mamba-scheduler-strategy extra_buffer \
     --quantization moe_wna16 \
     --kv-cache-dtype fp8_e4m3 \
     --max-running-requests 1 \

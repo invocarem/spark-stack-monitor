@@ -226,6 +226,18 @@ textarea {
   filter: brightness(1.05);
 }
 
+.btn.btn-secondary {
+  background: transparent;
+  color: var(--muted);
+  border-color: color-mix(in srgb, var(--border) 65%, var(--muted));
+}
+
+.btn.btn-secondary:hover {
+  color: var(--text);
+  border-color: var(--muted);
+  background: color-mix(in srgb, var(--bg) 55%, transparent);
+}
+
 .btn:disabled {
   opacity: 0.55;
   cursor: not-allowed;
@@ -374,4 +386,8 @@ textarea {
 .footer-status {
   font-size: 0.85rem;
   color: var(--muted);
+}
+
+.footer-status.error {
+  color: var(--danger);
 }

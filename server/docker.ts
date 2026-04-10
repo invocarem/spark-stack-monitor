@@ -253,6 +253,15 @@ export const TOOLS: readonly ToolMeta[] = [
     runner: "python3",
   },
   {
+    id: "benchmark_qwen3_397b",
+    label: "benchmark_qwen3_397b.py",
+    description:
+      "Fixed SGLang bench profile for Qwen3.5-397B GPTQ (10 prompts, concurrency 3, random 512→256, no thinking).",
+    format: "text",
+    path: `${WORKSPACE_TOOLS}/sglang/benchmark_qwen3_397b.py`,
+    runner: "python3",
+  },
+  {
     id: "benchmark_vllm",
     label: "benchmark_vllm.py",
     description:

@@ -1,4 +1,6 @@
 import type { Context, Hono } from "hono";
+import path from "node:path";
+import { spawn } from "node:child_process";
 import {
   listRunningContainers,
   runToolInContainer,
@@ -26,6 +28,7 @@ import {
   runStackPreset,
   stopStackContainer,
 } from "../stack-run.js";
+import { findRepoRoot } from "../repo-root.js";
 
 type ProviderId = "sglang" | "vllm";
 
@@ -41,6 +44,34 @@ function pickProvider(c: Context): ProviderId {
 
 function launchProvider(c: Context): LaunchProvider {
   return pickProvider(c);
+}
+
+type ScriptResult = {
+  code: number | null;
+  stdout: string;
+  stderr: string;
+};
+
+function runResetLogScript(provider: LaunchProvider): Promise<ScriptResult> {
+  const scriptPath = path.join(findRepoRoot(), "tools", "sglang", "reset_log.py");
+  const repoRoot = findRepoRoot();
+  return new Promise((resolve, reject) => {
+    const child = spawn("python3", [scriptPath, "--provider", provider, "--repo-root", repoRoot], {
+      windowsHide: true,
+    });
+    let stdout = "";
+    let stderr = "";
+    child.stdout?.setEncoding("utf8");
+    child.stderr?.setEncoding("utf8");
+    child.stdout?.on("data", (chunk: string) => {
+      stdout += chunk;
+    });
+    child.stderr?.on("data", (chunk: string) => {
+      stderr += chunk;
+    });
+    child.on("error", reject);
+    child.on("close", (code) => resolve({ code, stdout, stderr }));
+  });
 }
 
 export function registerCoreRoutes(app: Hono): void {
@@ -359,6 +390,48 @@ export function registerCoreRoutes(app: Hono): void {
       text: result.text,
       missing: result.missing === true,
     });
+  });
+
+  app.post("/api/launch/log/reset", async (c) => {
+    const provider = launchProvider(c);
+    try {
+      const result = await runResetLogScript(provider);
+      const stdout = result.stdout.trim();
+      if (result.code !== 0) {
+        let detail: unknown = undefined;
+        try {
+          detail = stdout ? JSON.parse(stdout) : undefined;
+        } catch {
+          detail = undefined;
+        }
+        return c.json(
+          {
+            error: "reset_log.py failed",
+            provider,
+            detail,
+            stderr: result.stderr.trim() || undefined,
+          },
+          500,
+        );
+      }
+      try {
+        const payload = JSON.parse(stdout) as Record<string, unknown>;
+        return c.json(payload);
+      } catch {
+        return c.json(
+          {
+            error: "reset_log.py returned non-JSON output",
+            provider,
+            stdout: stdout.slice(0, 1000),
+            stderr: result.stderr.trim() || undefined,
+          },
+          500,
+        );
+      }
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      return c.json({ error: message, provider }, 500);
+    }
   });
 
   app.post("/api/launch", async (c) => {
