@@ -13,4 +13,10 @@ bash run_cluster.sh $VLLM_IMAGE $VLLM_HOST_IP --head ~/.cache/huggingface \
   -e UCX_NET_DEVICES=$MN_IF_NAME \
   -e NCCL_SOCKET_IFNAME=$MN_IF_NAME \
   -e GLOO_SOCKET_IFNAME=$MN_IF_NAME \
-  -e TP_SOCKET_IFNAME=$MN_IF_NAME
+  -e TP_SOCKET_IFNAME=$MN_IF_NAME \
+  -e NCCL_IB_DISABLE=0 \
+  -e NCCL_IB_HCA=rocep1s0f1,roceP2p1s0f1 \
+  -e NCCL_SOCKET_IFNAME=^lo,docker0 \
+  -e NCCL_DEBUG=INFO
+
+
