@@ -96,6 +96,18 @@ function dedupeDockerNetworkHostLines(lines: string[]): string[] {
   });
 }
 
+/** Use $VLLM_IMAGE in docker run so the host can override the image (e.g. export VLLM_IMAGE=... in ~/.bashrc). */
+function replacePresetImageWithVllmEnv(lines: string[], image: string): string[] {
+  const esc = image.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const re = new RegExp(`^\\s*${esc}(\\s*\\\\)?\\s*$`);
+  return lines.map((l) => {
+    if (re.test(l)) {
+      return l.replace(image, '"$VLLM_IMAGE"');
+    }
+    return l;
+  });
+}
+
 export function writeVllmStackDockerScript(
   input: RenderVllmStackDockerInput,
 ): { ok: true; scriptPath: string } | { ok: false; error: string } {
@@ -144,6 +156,8 @@ export function writeVllmStackDockerScript(
     lines = injectLinesBeforeImage(lines, input.preset.image, injectEnv);
   }
 
+  lines = replacePresetImageWithVllmEnv(lines, input.preset.image);
+
   const monitorDir = path.join(input.repoRoot, ".monitor");
   fs.mkdirSync(monitorDir, { recursive: true });
   const scriptPath = path.join(
@@ -164,6 +178,8 @@ export function writeVllmStackDockerScript(
   if (input.hfToken) {
     header.push(`export HF_TOKEN=${bashSingleQuoted(input.hfToken)}`);
   }
+  header.push(`VLLM_IMAGE="\${VLLM_IMAGE:-${input.preset.image}}"`);
+  header.push("export VLLM_IMAGE");
   header.push("", ...lines);
   header.push("");
 

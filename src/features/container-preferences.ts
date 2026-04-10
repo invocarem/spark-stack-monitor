@@ -17,6 +17,7 @@ const PREFERRED_CONTAINERS: Record<MonitorProvider, readonly PreferredContainer[
   ],
   vllm: [
     { name: "vllm_node_tf5", image: "vllm-node-tf5:latest" },
+    { name: "vllm_node_tf5_worker", image: "vllm-node-tf5:latest" },
     { name: "vllm_node", image: "vllm-node:latest" },
   ],
 };
