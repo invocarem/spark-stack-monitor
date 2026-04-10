@@ -168,5 +168,6 @@ docker run "${DOCKER_TTY_FLAGS[@]}" --rm \
     --shm-size 10.24g \
     --gpus all \
     -v "${PATH_TO_HF_HOME}:/root/.cache/huggingface" \
+    -v "${MONITOR_REPO_ROOT}:/workspace" \
     "${ADDITIONAL_ARGS[@]}" \
     "${DOCKER_IMAGE}" -c "${RAY_START_CMD}"
