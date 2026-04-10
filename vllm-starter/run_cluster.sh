@@ -14,6 +14,10 @@
 #         /abs/path/to/huggingface/cache \
 #         -e VLLM_HOST_IP=<head_node_ip>
 #
+# Optional: set a fixed Docker container name (default is node-<random>):
+#         --container-name vllm_node
+#    or: -n vllm_node
+#
 # 2. On every worker machine, execute:
 #    bash run_cluster.sh \
 #         vllm/vllm-openai \
@@ -27,19 +31,19 @@
 # node and thereby shuts down the entire cluster.
 # Every machine must be reachable at the supplied IP address.
 #
-# The container is named "node-<random_suffix>". To open a shell inside
-# a container after launch, use:
-#       docker exec -it node-<random_suffix> /bin/bash
+# The container is named "node-<random_suffix>" unless you pass
+# --container-name or -n. To open a shell inside a running container:
+#       docker exec -it <container_name> /bin/bash
 #
 # Then, you can execute vLLM commands on the Ray cluster as if it were a
 # single machine, e.g. vllm serve ...
 #
-# To stop the container, use:
-#       docker stop node-<random_suffix>
+# Containers are run with -it --rm (interactive TTY, removed on exit).
+# To stop from another terminal: docker stop <container_name>
 
 # Check for minimum number of required arguments.
 if [ $# -lt 4 ]; then
-    echo "Usage: $0 docker_image head_node_ip --head|--worker path_to_hf_home [additional_args...]"
+    echo "Usage: $0 docker_image head_node_ip --head|--worker path_to_hf_home [--container-name|-n NAME] [additional_args...]"
     exit 1
 fi
 
@@ -52,6 +56,39 @@ shift 4
 
 # Preserve any extra arguments so they can be forwarded to Docker.
 ADDITIONAL_ARGS=("$@")
+
+# Optional: --container-name NAME or -n NAME (consumed here, not passed to docker run).
+CONTAINER_NAME=""
+NEW_ARGS=()
+i=0
+while [ "${i}" -lt "${#ADDITIONAL_ARGS[@]}" ]; do
+    arg="${ADDITIONAL_ARGS[$i]}"
+    case "${arg}" in
+        --container-name)
+            i=$((i + 1))
+            if [ "${i}" -ge "${#ADDITIONAL_ARGS[@]}" ]; then
+                echo "Error: --container-name requires a value"
+                exit 1
+            fi
+            CONTAINER_NAME="${ADDITIONAL_ARGS[$i]}"
+            i=$((i + 1))
+            ;;
+        -n)
+            i=$((i + 1))
+            if [ "${i}" -ge "${#ADDITIONAL_ARGS[@]}" ]; then
+                echo "Error: -n requires a container name"
+                exit 1
+            fi
+            CONTAINER_NAME="${ADDITIONAL_ARGS[$i]}"
+            i=$((i + 1))
+            ;;
+        *)
+            NEW_ARGS+=("${arg}")
+            i=$((i + 1))
+            ;;
+    esac
+done
+ADDITIONAL_ARGS=("${NEW_ARGS[@]}")
 
 # Validate the NODE_TYPE argument.
 if [ "${NODE_TYPE}" != "--head" ] && [ "${NODE_TYPE}" != "--worker" ]; then
@@ -87,17 +124,15 @@ if [[ "${NODE_TYPE}" == "--head" && -n "${VLLM_HOST_IP}" ]]; then
     fi
 fi
 
-# Generate a unique container name with random suffix.
-# Docker container names must be unique on each host.
-# The random suffix allows multiple Ray containers to run simultaneously on the same machine,
-# for example, on a multi-GPU machine.
-CONTAINER_NAME="node-${RANDOM}"
+# Docker container names must be unique on each host. Default: random suffix so
+# multiple Ray containers can run on one machine; use --container-name/-n for a fixed name.
+if [ -z "${CONTAINER_NAME}" ]; then
+    CONTAINER_NAME="node-${RANDOM}"
+fi
 
-# Define a cleanup routine that removes the container when the script exits.
-# This prevents orphaned containers from accumulating if the script is interrupted.
+# Stop the container on script exit (e.g. SIGINT). --rm removes it after stop.
 cleanup() {
-    docker stop "${CONTAINER_NAME}"
-    docker rm "${CONTAINER_NAME}"
+    docker stop "${CONTAINER_NAME}" 2>/dev/null || true
 }
 trap cleanup EXIT
 
@@ -120,7 +155,7 @@ fi
 # --shm-size 10.24g: Increases shared memory
 # --gpus all: Gives container access to all GPUs on the host
 # -v HF_HOME: Mounts HuggingFace cache to avoid re-downloading models
-docker run \
+docker run -it --rm \
     --entrypoint /bin/bash \
     --network host \
     --name "${CONTAINER_NAME}" \
