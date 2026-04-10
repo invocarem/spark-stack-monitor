@@ -3,13 +3,15 @@
 # Configuration variables
 MODEL="Qwen/Qwen3.5-397B-A17B-GPTQ-Int4"
 SERVED_MODEL_NAME="qwen3.5-397b"
-CONTEXT_LENGTH=131072
-MAX_TOTAL_TOKENS=81920
-MEM_FRACTION_STATIC=0.93
+CONTEXT_LENGTH=65536
+MAX_TOTAL_TOKENS=65536
+MEM_FRACTION_STATIC=0.90
+CHUNKED_PREFILL_SIZE=2048 
 TENSOR_PARALLEL=2
 HOST="0.0.0.0"
 PORT=30000
 ATTENTION_BACKEND="triton"
+FP8_GEMM_BACKEND="cutlass"
 TOOL_CALL_PARSER="qwen3_coder"
 
 
@@ -30,6 +32,7 @@ HF_HUB_OFFLINE=1 SGLANG_USE_AITER=1 python3 -m sglang.launch_server \
     --watchdog-timeout 1200 \
     --model-loader-extra-config '{"enable_multithread_load": true}' \
     --attention-backend ${ATTENTION_BACKEND} \
+    --fp8-gemm-backend ${FP8_GEMM_BACKEND} \
     --tool-call-parser ${TOOL_CALL_PARSER} \
     --reasoning-parser qwen3 \
     --speculative-algorithm EAGLE \
@@ -37,14 +40,13 @@ HF_HUB_OFFLINE=1 SGLANG_USE_AITER=1 python3 -m sglang.launch_server \
     --speculative-eagle-topk 1 \
     --speculative-num-draft-tokens 4 \
     --enable-flashinfer-allreduce-fusion \
-    --mamba-scheduler-strategy no_buffer \
     --disable-radix-cache \
     --quantization moe_wna16 \
     --kv-cache-dtype fp8_e4m3 \
-    --max-running-requests 3 \
-    --max-prefill-tokens=2048 \
+    --max-running-requests 1 \
+    --max-prefill-tokens=${CHUNKED_PREFILL_SIZE} \
     --enable-cache-report \
     --preferred-sampling-params '{"temperature":0.6,"top_p":0.95,"top_k":20,"min_p":0.0,"presence_penalty":0.0,"repetition_penalty":1.0}' \
     --trust-remote-code \
     --enable-dp-attention \
-    --cuda-graph-max-bs 8 
+    --cuda-graph-max-bs 1 
