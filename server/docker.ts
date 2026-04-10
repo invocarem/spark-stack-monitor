@@ -256,7 +256,7 @@ export const TOOLS: readonly ToolMeta[] = [
     id: "benchmark_qwen3_397b",
     label: "benchmark_qwen3_397b.py",
     description:
-      "Fixed SGLang bench profile for Qwen3.5-397B GPTQ (10 prompts, concurrency 3, random 512→256, no thinking).",
+      "Wraps benchmark_sglang.py: preset qwen3_397b_gptq (10 prompts, concurrency 1, random 512→256) or --preset none; BENCHMARK_* env + extra CLI forwarded. Legacy QWEN397_BENCH_*.",
     format: "text",
     path: `${WORKSPACE_TOOLS}/sglang/benchmark_qwen3_397b.py`,
     runner: "python3",

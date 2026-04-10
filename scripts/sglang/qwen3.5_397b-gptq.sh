@@ -6,7 +6,9 @@ SERVED_MODEL_NAME="qwen3.5-397b"
 CONTEXT_LENGTH=65536
 MAX_TOTAL_TOKENS=65536
 MEM_FRACTION_STATIC=0.94
-CHUNKED_PREFILL_SIZE=2048 
+CHUNKED_PREFILL_SIZE=2048
+CUDA_GRAPH_MAX_BS=4
+MAX_RUNNING_REQUESTS=1
 TENSOR_PARALLEL=2
 HOST="0.0.0.0"
 PORT=30000
@@ -43,10 +45,10 @@ HF_HUB_OFFLINE=1 SGLANG_USE_AITER=1 SGLANG_ENABLE_SPEC_V2=True sglang serve \
     --mamba-scheduler-strategy extra_buffer \
     --quantization moe_wna16 \
     --kv-cache-dtype fp8_e4m3 \
-    --max-running-requests 1 \
+    --max-running-requests ${MAX_RUNNING_REQUESTS} \
     --max-prefill-tokens=${CHUNKED_PREFILL_SIZE} \
     --enable-cache-report \
     --preferred-sampling-params '{"temperature":0.6,"top_p":0.95,"top_k":20,"min_p":0.0,"presence_penalty":0.0,"repetition_penalty":1.0}' \
     --trust-remote-code \
     --enable-dp-attention \
-    --cuda-graph-max-bs 1 
+    --cuda-graph-max-bs ${CUDA_GRAPH_MAX_BS} 

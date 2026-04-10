@@ -33,31 +33,34 @@ const TOOL_LAUNCH_LOG_200 = "launch_log_200";
 const PIPE_PROBE_TOOL_ID = "pipe_probe";
 const DEFAULT_DIAGNOSTICS_TIMEOUT_MS = 15000;
 
+/** Must match `WORKSPACE_TOOLS` in server/docker.ts (`/workspace/tools` in container). */
+const DIAGNOSTICS_PY = "python3 /workspace/tools/sglang/diagnostics.py";
+
 const DIAGNOSTICS_PRESETS: readonly DiagnosticsPreset[] = [
   {
     id: "quick_health",
     label: "Quick health check",
-    command: "echo '== host ==' && uname -a && echo && echo '== uptime ==' && uptime && echo && echo '== disk ==' && df -h && echo && echo '== memory ==' && free -h",
+    command: `${DIAGNOSTICS_PY} quick_health`,
   },
   {
     id: "gpu_status",
     label: "GPU status (nvidia-smi)",
-    command: "nvidia-smi",
+    command: `${DIAGNOSTICS_PY} gpu_status`,
   },
   {
     id: "runtime_processes",
     label: "LLM runtime processes",
-    command: "ps aux | grep -Ei 'python|vllm|sglang' || true",
+    command: `${DIAGNOSTICS_PY} runtime_processes`,
   },
   {
     id: "workspace_logs",
     label: "Workspace + launch logs",
-    command: "ls -lah /workspace && echo && ls -lah /workspace/.monitor && echo && tail -n 200 /workspace/.monitor/*launch.log 2>/dev/null || true",
+    command: `${DIAGNOSTICS_PY} workspace_logs`,
   },
   {
     id: "python_env",
     label: "Python env summary",
-    command: "python3 -V && pip list | grep -Ei 'torch|vllm|sglang|transformers|xformers' || true",
+    command: `${DIAGNOSTICS_PY} python_env`,
   },
 ] as const;
 
