@@ -10,7 +10,7 @@ echo "Using interface $MN_IF_NAME with IP $VLLM_HOST_IP"
 # Restart head node
 bash run_cluster.sh $VLLM_IMAGE $VLLM_HOST_IP \
   --head ~/.cache/huggingface \
-  -n vllm_node_tf5 \
+  -n vllm_node \
   -e VLLM_HOST_IP=$VLLM_HOST_IP \
   -e UCX_NET_DEVICES=$MN_IF_NAME \
   -e NCCL_SOCKET_IFNAME=$MN_IF_NAME \

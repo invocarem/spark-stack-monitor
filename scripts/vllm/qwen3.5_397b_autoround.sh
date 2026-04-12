@@ -4,17 +4,17 @@
 
 set -euo pipefail
 
-exec vllm serve Qwen/Qwen3.5-35B-A3B \
-    --served-model-name qwen3.5-35b \
+exec vllm serve Intel/Qwen3.5-397B-A17B-int4-AutoRound \
+    --served-model-name qwen3.5-397b \
     --enable-auto-tool-choice \
     --tool-call-parser qwen3_coder \
     --language-model-only \
-    --gpu-memory-utilization 0.75 \
+    --gpu-memory-utilization 0.88\
     --load-format fastsafetensors \
     --attention-backend flashinfer \
-    --max-model-len 131072 \
-    --reasoning-parser qwen3 \
+    --max-model-len 32768 \
     --enforce-eager \
-    --max-num-seqs 8 \
+    --max-num-seqs 2 \
+    --reasoning-parser qwen3 \
     --tensor-parallel-size 2 \
     --distributed-executor-backend ray

@@ -1,5 +1,5 @@
 # On Node 1, enter container and start server
-export VLLM_CONTAINER=$(docker ps --format '{{.Names}}' | grep -E '^node-[0-9]+$')
+export VLLM_CONTAINER="vllm_node_tf5"
 
 # On spark1, when launching vLLM
 docker exec -it $VLLM_CONTAINER /bin/bash -c "
