@@ -1,15 +1,8 @@
-# vLLM 397B AutoRound without Ray: use --distributed-executor-backend mp.
+# Multi-node mp, rank 0 (head): run on the head host after head_no_ray.sh is up.
 #
-# 1) Start the container (no Ray):
-#    export VLLM_IMAGE=...   # your image, same as for head.sh
-#    bash head_no_ray.sh     # on each host, or one host only for single-node
+# Prereq: bash head_no_ray.sh on this machine (container vllm_node by default).
 #
-# 2) From this repo's UI/tools or manually, docker exec into the container and run
-#    the inner bash -c block below (single-node: one machine, all GPUs).
-#
-# Multi-node mp (two hosts): use qwen3.5_397b_autoround_mp_head.sh (node-rank 0) and
-# qwen3.5_397b_autoround_mp_worker.sh (node-rank 1) after head_no_ray.sh / worker_no_ray.sh.
-# See https://docs.vllm.ai/en/stable/serving/distributed_serving.html
+# Override: MASTER_ADDR, MASTER_PORT, NNODES, VLLM_CONTAINER
 
 set -euo pipefail
 
@@ -18,8 +11,14 @@ export VLLM_USE_FLASHINFER_MOE_FP16=0
 export VLLM_MARLIN_USE_ATOMIC_ADD=1
 export PYTORCH_CUDA_ALLOC_CONF="expandable_segments:True"
 
-# Single-node example (2 GPUs on one box): mp avoids Ray memory overhead.
-docker exec -it "$VLLM_CONTAINER" /bin/bash -c "
+MASTER_ADDR="${MASTER_ADDR:-192.168.100.11}"
+MASTER_PORT="${MASTER_PORT:-29501}"
+NNODES="${NNODES:-2}"
+
+docker exec -it \
+  -e MASTER_ADDR="$MASTER_ADDR" \
+  -e MASTER_PORT="$MASTER_PORT" \
+  "$VLLM_CONTAINER" /bin/bash -c "
   vllm serve Intel/Qwen3.5-397B-A17B-int4-AutoRound \
     --served-model-name qwen3.5-397b \
     --max-model-len 16384 \
@@ -40,4 +39,8 @@ docker exec -it "$VLLM_CONTAINER" /bin/bash -c "
     --trust-remote-code \
     --mm-encoder-tp-mode data \
     --distributed-executor-backend mp \
+    --nnodes ${NNODES} \
+    --node-rank 0 \
+    --master-addr ${MASTER_ADDR} \
+    --master-port ${MASTER_PORT} \
     --tensor-parallel-size 2"
